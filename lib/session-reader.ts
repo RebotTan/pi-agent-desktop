@@ -7,11 +7,12 @@ import { readdir } from "fs/promises";
 import { isAbsolute, join, normalize as normalizePath, relative, resolve as resolvePath, sep } from "path";
 import type { AgentMessage, ImageContent, SessionEntry, SessionHeader, SessionInfo, SessionContext } from "./types";
 import { normalizeToolCalls } from "./normalize";
-import { getThinkingPreview } from "./message-display";
+import { withoutMessageSignatures } from "./message-signatures";
+import { getThinkingPreview, isMessageGroupAnchor } from "./message-display";
 import { projectIdentityKey } from "./project-identity";
 import { sessionPathKey } from "./session-path";
 import { MAX_TOOL_RESULT_IMAGE_BYTES, TOOL_RESULT_IMAGE_MIMES } from "./tool-result-images";
-import { projectToolResultDetails, slimToolResultMessage } from "./tool-result-details";
+import { projectToolResultDetails } from "./tool-result-details";
 import { openSlimSessionManager } from "./session-slim-load";
 import { resolveProject, type ProjectInfo } from "./worktree";
 import { readSubagentRun, SUBAGENT_META_TYPE } from "./subagents";
@@ -975,12 +976,10 @@ function entryToUiMessage(
       // Transcript system messages carry the prompt and tool loadout (Pi >= 0.86).
       // They are provider input, not conversation, so they never render.
       if (entry.message.role === "system") return null;
-      // Tool-result details are projected to the fields the UI renders:
-      // extensions can persist megabytes there (see lib/tool-result-details.ts).
-      const normalized = slimToolResultMessage(normalizeToolCalls(entry.message));
+      const displayMessage = withoutMessageSignatures(entry.message);
       let message = options.deferToolResultImages
-        ? deferToolResultBase64Images(normalized, options.sessionId, entry.id)
-        : normalized;
+        ? deferToolResultBase64Images(normalizeToolCalls(displayMessage), options.sessionId, entry.id)
+        : normalizeToolCalls(displayMessage);
       const legacyContent = message.role === "assistant" ? (message as { content: unknown }).content : undefined;
       if (typeof legacyContent === "string") {
         message = { ...message, content: [{ type: "text", text: legacyContent }] } as AgentMessage;
