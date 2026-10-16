@@ -23,7 +23,7 @@ jobs:
             apple_signing_identity: "-"
           - runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-            args: --target x86_64-unknown-linux-gnu --bundles deb
+            args: --target x86_64-unknown-linux-gnu --bundles deb,rpm
             apple_signing_identity: ""
           # Restored after the file-tracer fix in eacaca3/7f2a1c0: a literal
           # homedir() reaching an fs call made @vercel/nft glob the whole
@@ -72,7 +72,8 @@ jobs:
             libayatana-appindicator3-dev \
             libgtk-3-dev \
             libwebkit2gtk-4.1-dev \
-            librsvg2-dev
+            librsvg2-dev \
+            rpm
 
       - name: Install dependencies
         run: npm ci
