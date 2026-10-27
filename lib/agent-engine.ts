@@ -16,11 +16,17 @@
 
 import type { AgentSessionWrapper } from "./rpc-manager";
 
+/** closingSessionWait 无 options.shutdownDeadlineMs 时的兜底（与 pi-web 默认一致）。 */
+const DEFAULT_SHUTDOWN_DEADLINE_MS = 5_000;
+
 /** 运行中会话 id 集合变化的监听器。 */
 export type RunningSessionIdsListener = (ids: string[]) => void;
 
+/** 一次会话启动的结果：wrapper + 真实会话 id（可能因复用/去重与请求 id 不同）。 */
+export type SessionStartResult = { session: AgentSessionWrapper; realSessionId: string };
+
 /** 单次捕获的 startRpcSession 在途 promise（inflight 去重用）。 */
-export type StartLock = Promise<{ session: AgentSessionWrapper; realSessionId: string }>;
+export type StartLock = Promise<SessionStartResult>;
 
 /**
  * 会话运行时引擎的契约。
@@ -28,7 +34,8 @@ export type StartLock = Promise<{ session: AgentSessionWrapper; realSessionId: s
  * 面向未来的语义方法（getSession/setSession/...）给新代码用；
  * 四个 raw 注册表方法（registry/startLocks/...）给 rpc-manager 的既有内部
  * 访问函数过渡用（它们的调用点仍按 Map/Set 操作，见各 getter 的注释）。
- * PR-2（startRpcSession 收进引擎）会把调用点全部收敛到语义方法上。
+ * 会话启动的并发协调协议（startRpcSession）已收进 startSession；
+ * 后续 PR 再把剩余调用点逐步收敛到语义方法上。
  */
 export interface AgentEngine {
   // --- session registry ---
@@ -54,7 +61,25 @@ export interface AgentEngine {
   runningListenerCount(): number;
   allRunningListeners(): RunningSessionIdsListener[];
 
-  // --- raw 注册表（rpc-manager 内部访问函数过渡用，PR-2 后收敛）---
+  // --- 会话启动协调（startRpcSession 的并发协议）---
+  /**
+   * 启动一个会话：existing 复用 / inflight 合并 / closing-wait 排队 / 锁生命周期。
+   * 只调用一次 assembler（会话装配是 rpc-manager 域知识，作为回调传入）。
+   * Sidecar/Remote 引擎将来用同一协议 spawn 子进程 / SSH 远程。
+   */
+  startSession(
+    sessionId: string,
+    assembler: () => Promise<SessionStartResult>,
+    options?: { shutdownDeadlineMs?: number },
+  ): Promise<SessionStartResult>;
+  /**
+   * 等待 `sessionId` 正在关闭的 wrapper 释放，或 null（无关闭中 wrapper）。
+   * deadlineMs 由调用方给（rpc-manager 的 SESSION_SHUTDOWN_DEADLINE_MS），
+   * 避免引擎依赖 rpc-manager 的域常量。
+   */
+  closingSessionWait(sessionId: string, deadlineMs: number): Promise<void> | null;
+
+  // --- raw 注册表（rpc-manager 内部访问函数过渡用，逐步收敛）---
   /** rpc-manager 的 getRegistry() 委托目标。 */
   registry(): Map<string, AgentSessionWrapper>;
   /** rpc-manager 的 getLocks() 委托目标。 */
@@ -77,6 +102,11 @@ export class InProcessAgentEngine implements AgentEngine {
   private readonly startLockMap = new Map<string, StartLock>();
   private readonly startingCwdMap = new Map<string, number>();
   private readonly runningListenerSet = new Set<RunningSessionIdsListener>();
+  /** 关闭中 wrapper 的 waitUntilDisposed 缓存（bounded，见 closingSessionWait）。 */
+  private readonly closingWaits = new WeakMap<
+    AgentSessionWrapper,
+    { done: boolean; promise: Promise<void> }
+  >();
 
   constructor() {
     const destroy = () => this.sessions.forEach((session) => session.destroy());
@@ -130,6 +160,59 @@ export class InProcessAgentEngine implements AgentEngine {
     const remaining = (this.startingCwdMap.get(cwd) ?? 0) + delta;
     if (remaining <= 0) this.startingCwdMap.delete(cwd);
     else this.startingCwdMap.set(cwd, remaining);
+  }
+
+  // --- 会话启动协调 ---
+  async startSession(
+    sessionId: string,
+    assembler: () => Promise<SessionStartResult>,
+    options?: { shutdownDeadlineMs?: number },
+  ): Promise<SessionStartResult> {
+    const existing = this.sessions.get(sessionId);
+    if (existing?.isAlive()) return { session: existing, realSessionId: sessionId };
+
+    const inflight = this.startLockMap.get(sessionId);
+    if (inflight) return inflight;
+
+    const closingWait = this.closingSessionWait(sessionId, options?.shutdownDeadlineMs ?? DEFAULT_SHUTDOWN_DEADLINE_MS);
+    if (closingWait) {
+      // Concurrent starts share this lock, then the one start that follows it.
+      const waiting: Promise<SessionStartResult> = closingWait.then(() => {
+        if (this.startLockMap.get(sessionId) === waiting) this.startLockMap.delete(sessionId);
+        return this.startSession(sessionId, assembler, options);
+      });
+      this.startLockMap.set(sessionId, waiting);
+      return waiting;
+    }
+
+    const starting = (async () => assembler())().finally(() => {
+      this.startLockMap.delete(sessionId);
+    });
+    this.startLockMap.set(sessionId, starting);
+    return starting;
+  }
+
+  closingSessionWait(sessionId: string, deadlineMs: number): Promise<void> | null {
+    const closing = this.sessions.get(sessionId);
+    // A wrapper from before a hot reload may lack waitUntilDisposed.
+    if (!closing || closing.isAlive() || typeof closing.waitUntilDisposed !== "function") return null;
+    let wait = this.closingWaits.get(closing);
+    if (!wait) {
+      const entry = { done: false, promise: Promise.resolve() };
+      entry.promise = closing
+        .waitUntilDisposed(deadlineMs)
+        .then((disposed) => {
+          if (!disposed) {
+            console.warn(`[pi-web] session ${sessionId} is still shutting down; starting it again anyway`);
+          }
+        })
+        .finally(() => {
+          entry.done = true;
+        });
+      this.closingWaits.set(closing, entry);
+      wait = entry;
+    }
+    return wait.done ? null : wait.promise;
   }
 
   // --- running listeners ---

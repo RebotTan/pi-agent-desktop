@@ -5,7 +5,7 @@ import { randomUUID } from "crypto";
 import { existsSync, realpathSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import { validateAgentImages } from "./image-attachments";
-import { getEngine } from "./agent-engine";
+import { getEngine, type SessionStartResult } from "./agent-engine";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
 import {
@@ -2228,7 +2228,6 @@ function getLocks(): Map<string, Promise<{ session: AgentSessionWrapper; realSes
 }
 
 const CLOSING_SESSION_WAIT_MARGIN_MS = 1_000;
-const closingSessionWaits = new WeakMap<AgentSessionWrapper, { done: boolean; promise: Promise<void> }>();
 
 /**
  * The wait for a wrapper of `sessionId` that is shutting down, or null when there is none
@@ -2238,24 +2237,10 @@ const closingSessionWaits = new WeakMap<AgentSessionWrapper, { done: boolean; pr
  * session id, which the replacement shares. The wait is bounded so a shutdown stuck in
  * extension binding cannot keep the session from starting again. One wait per closing
  * wrapper: its bound runs from the first caller and later callers share it, so a
- * shutdown still binding extensions can be overtaken.
+ * shutdown still binding extensions can be overtaken. (PR-2: 委托给引擎的协调协议。)
  */
 function closingRpcSessionWait(sessionId: string): Promise<void> | null {
-  const closing = getRegistry().get(sessionId);
-  // A wrapper from before a hot reload may lack waitUntilDisposed.
-  if (!closing || closing.isAlive() || typeof closing.waitUntilDisposed !== "function") return null;
-  let wait = closingSessionWaits.get(closing);
-  if (!wait) {
-    const entry = { done: false, promise: Promise.resolve() };
-    entry.promise = closing.waitUntilDisposed(SESSION_SHUTDOWN_DEADLINE_MS + CLOSING_SESSION_WAIT_MARGIN_MS)
-      .then((disposed) => {
-        if (!disposed) console.warn(`[pi-web] session ${sessionId} is still shutting down; starting it again anyway`);
-      })
-      .finally(() => { entry.done = true; });
-    closingSessionWaits.set(closing, entry);
-    wait = entry;
-  }
-  return wait.done ? null : wait.promise;
+  return getEngine().closingSessionWait(sessionId, SESSION_SHUTDOWN_DEADLINE_MS + CLOSING_SESSION_WAIT_MARGIN_MS);
 }
 
 function normalizeRpcCwd(cwd: string): string {
@@ -2586,32 +2571,15 @@ export async function startRpcSession(
   sessionFile: string,
   cwd: string | undefined,
   options: RpcSessionStartOptions = {},
-): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
+): Promise<SessionStartResult> {
   const { initialModel, allowInitialModelFallback, thinkingLevel } = options;
   const requestedToolNames = options.toolNames === undefined
     ? undefined
     : validateSessionToolSelection(options.toolNames);
-  const registry = getRegistry();
-  const locks = getLocks();
-
-  const existing = registry.get(sessionId);
-  if (existing?.isAlive()) return { session: existing, realSessionId: sessionId };
-
-  const inflight = locks.get(sessionId);
-  if (inflight) return inflight;
-
-  const closingWait = closingRpcSessionWait(sessionId);
-  if (closingWait) {
-    // Concurrent starts share this lock, then the one start that follows it.
-    const waiting: Promise<{ session: AgentSessionWrapper; realSessionId: string }> = closingWait.then(() => {
-      if (locks.get(sessionId) === waiting) locks.delete(sessionId);
-      return startRpcSession(sessionId, sessionFile, cwd, options);
-    });
-    locks.set(sessionId, waiting);
-    return waiting;
-  }
-
-  let sessionManager: SessionManager;
+  // PR-2: 并发协调（existing 复用 / inflight 合并 / closing-wait 排队 / 锁管理）
+  // 收进 getEngine().startSession；本函数只提供「装配」这个引擎域之外的 assembler。
+  return getEngine().startSession(sessionId, async () => {
+    let sessionManager: SessionManager;
   if (sessionFile) {
     sessionManager = SessionManager.open(sessionFile, undefined);
   } else {
@@ -2658,7 +2626,7 @@ export async function startRpcSession(
   });
   const chatOnly = sessionPolicy.kind === "chat-only";
   const finishStartingSession = trackStartingSession(sessionCwd);
-  const starting = (async () => {
+  try {
     // Some extensions access the SDK's global theme even outside the terminal UI.
     if (!chatOnly) initTheme();
     const agentDir = getAgentDir();
@@ -2884,11 +2852,10 @@ export async function startRpcSession(
     registerRpcWrapper(wrapper);
 
     return { session: wrapper, realSessionId };
-  })().finally(() => {
-    locks.delete(sessionId);
+  } finally {
     finishStartingSession();
-  });
-
-  locks.set(sessionId, starting);
-  return starting;
+  }
+    },
+    { shutdownDeadlineMs: SESSION_SHUTDOWN_DEADLINE_MS + CLOSING_SESSION_WAIT_MARGIN_MS },
+  );
 }
