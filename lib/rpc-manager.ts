@@ -6,6 +6,7 @@ import { existsSync, realpathSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import { validateAgentImages } from "./image-attachments";
 import { getEngine, type SessionStartResult } from "./agent-engine";
+import { getPluginRegistry } from "./plugin-registry";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
 import {
@@ -2714,6 +2715,7 @@ export async function startRpcSession(
               systemPrompt: chatWorkspacePrompt(chatFilesEnabled, { folder: chatFolder, unlocked: chatUnlocked }),
               extensionFactories: [
                 ...(builtins?.extensions ?? []),
+                ...getPluginRegistry().getAgentExtensions(),
                 createArtifactGuideExtension(),
                 // A chat with a folder saves into it; only a legacy chat still saves to Downloads.
                 ...(chatGrants && !chatFolder
@@ -2745,6 +2747,7 @@ export async function startRpcSession(
         : {
             extensionFactories: [
               ...(builtins?.extensions ?? []),
+              ...getPluginRegistry().getAgentExtensions(),
               createReadOnlyMcpPolicyExtension(),
               createApprovalPolicyExtension(),
               createArtifactGuideExtension(),
