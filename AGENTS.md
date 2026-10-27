@@ -316,7 +316,7 @@ grill(已做) → spec → ticket → implement → code-review → pr → chang
 
 ### 发版流程（changesets）
 
-1. `dev` → `main` 合并触发 `.github/workflows/release.yml`。
+1. `dev` → `main` 合并触发 `.github/workflows/version.yml`。
 2. changesets/action 在 `main` 上开「chore: version」PR：`changeset version`
    升 `package.json` 版本号 + 写 `CHANGELOG.md`。
 3. 人工确认 version PR → 合并 → 手动 `npm run dist:win`（或对应平台）出安装包

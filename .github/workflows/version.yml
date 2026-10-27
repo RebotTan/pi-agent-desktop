@@ -1,0 +1,48 @@
+name: Version
+
+# changesets 发版：dev 合并到 main 后，在 main 上开一个 "chore: version" PR，
+# 升 package.json 版本号并写 CHANGELOG.md。人工确认后合并。
+#
+# 安装包不在这里构建——由 release.yml（workflow_dispatch 手动触发）负责。
+# 见 AGENTS.md 的「开发流程」节。
+
+on:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  version:
+    name: Create version PR
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Create version pull request
+        uses: changesets/action@v1
+        with:
+          version: npx changeset version
+          commit: "chore: version"
+          title: "chore: version"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
