@@ -1,0 +1,176 @@
+// ============================================================================
+// AgentEngine — 会话运行时引擎的显式接口与进程内实现
+// ============================================================================
+//
+// 目的：把会话运行时状态从散落在 lib/rpc-manager.ts 的四个 globalThis 容器
+// （__piSessions / __piStartLocks / __piStartingSessionCwds / __piRunningListeners）
+// 收敛成一个显式引擎实例（AgentEngine）。
+//
+// - 实例仍然挂在 globalThis.__piEngine，保住 Next.js 热重载下的会话存活
+//   （AGENTS.md 硬规则；模块级 Map 会丢，globalThis 不会）。
+// - 换实现有了接缝：SidecarEngine（每 worker 一个子进程）、RemoteEngine（SSH）
+//   可实现同一接口后替换，上层零改动。
+//
+// 见 .agents/adr/0001-agent-engine-seam.md、GLOSSARY.md。
+// 状态持有（私有字段）+ 生命周期（process 信号）都在这里，不再藏在 getter 副作用里。
+
+import type { AgentSessionWrapper } from "./rpc-manager";
+
+/** 运行中会话 id 集合变化的监听器。 */
+export type RunningSessionIdsListener = (ids: string[]) => void;
+
+/** 单次捕获的 startRpcSession 在途 promise（inflight 去重用）。 */
+export type StartLock = Promise<{ session: AgentSessionWrapper; realSessionId: string }>;
+
+/**
+ * 会话运行时引擎的契约。
+ *
+ * 面向未来的语义方法（getSession/setSession/...）给新代码用；
+ * 四个 raw 注册表方法（registry/startLocks/...）给 rpc-manager 的既有内部
+ * 访问函数过渡用（它们的调用点仍按 Map/Set 操作，见各 getter 的注释）。
+ * PR-2（startRpcSession 收进引擎）会把调用点全部收敛到语义方法上。
+ */
+export interface AgentEngine {
+  // --- session registry ---
+  getSession(sessionId: string): AgentSessionWrapper | undefined;
+  setSession(sessionId: string, wrapper: AgentSessionWrapper): void;
+  deleteSession(sessionId: string): void;
+  sessionCount(): number;
+  allSessions(): AgentSessionWrapper[];
+  allEntries(): Array<[string, AgentSessionWrapper]>;
+
+  // --- start locks（startRpcSession 的 inflight 去重）---
+  getStartLock(sessionId: string): StartLock | undefined;
+  setStartLock(sessionId: string, lock: StartLock): void;
+  deleteStartLock(sessionId: string): void;
+
+  // --- starting cwds（新会话热路径的去重/忙检测）---
+  hasStartingCwd(cwd: string): boolean;
+  trackStartingCwd(cwd: string, delta: 1 | -1): void;
+
+  // --- running listeners（运行状态变化广播）---
+  addRunningListener(listener: RunningSessionIdsListener): void;
+  removeRunningListener(listener: RunningSessionIdsListener): void;
+  runningListenerCount(): number;
+  allRunningListeners(): RunningSessionIdsListener[];
+
+  // --- raw 注册表（rpc-manager 内部访问函数过渡用，PR-2 后收敛）---
+  /** rpc-manager 的 getRegistry() 委托目标。 */
+  registry(): Map<string, AgentSessionWrapper>;
+  /** rpc-manager 的 getLocks() 委托目标。 */
+  startLocks(): Map<string, StartLock>;
+  /** rpc-manager 的 getStartingSessionCwds() 委托目标。 */
+  startingCwds(): Map<string, number>;
+  /** rpc-manager 的 getRunningListeners() 委托目标。 */
+  runningListeners(): Set<RunningSessionIdsListener>;
+}
+
+/**
+ * 进程内实现：四个 Map/Set 收为私有字段，process 信号处理在构造时注册一次。
+ *
+ * exit → 同步 destroy（Node 无法在 exit handler 里 await，直接销毁
+ * 扩展清理是最后的尽力而为）；
+ * SIGINT/SIGTERM → allSettled shutdown。
+ */
+export class InProcessAgentEngine implements AgentEngine {
+  private readonly sessions = new Map<string, AgentSessionWrapper>();
+  private readonly startLockMap = new Map<string, StartLock>();
+  private readonly startingCwdMap = new Map<string, number>();
+  private readonly runningListenerSet = new Set<RunningSessionIdsListener>();
+
+  constructor() {
+    const destroy = () => this.sessions.forEach((session) => session.destroy());
+    const shutdown = () => {
+      const all = Array.from(this.sessions.values());
+      void Promise.allSettled(all.map((session) => session.shutdown()));
+    };
+    // Node cannot await work from an exit handler; direct destruction starts
+    // extension cleanup synchronously as a final best effort.
+    process.once("exit", destroy);
+    process.once("SIGINT", shutdown);
+    process.once("SIGTERM", shutdown);
+  }
+
+  // --- session registry ---
+  getSession(sessionId: string): AgentSessionWrapper | undefined {
+    return this.sessions.get(sessionId);
+  }
+  setSession(sessionId: string, wrapper: AgentSessionWrapper): void {
+    this.sessions.set(sessionId, wrapper);
+  }
+  deleteSession(sessionId: string): void {
+    this.sessions.delete(sessionId);
+  }
+  sessionCount(): number {
+    return this.sessions.size;
+  }
+  allSessions(): AgentSessionWrapper[] {
+    return Array.from(this.sessions.values());
+  }
+  allEntries(): Array<[string, AgentSessionWrapper]> {
+    return Array.from(this.sessions.entries());
+  }
+
+  // --- start locks ---
+  getStartLock(sessionId: string): StartLock | undefined {
+    return this.startLockMap.get(sessionId);
+  }
+  setStartLock(sessionId: string, lock: StartLock): void {
+    this.startLockMap.set(sessionId, lock);
+  }
+  deleteStartLock(sessionId: string): void {
+    this.startLockMap.delete(sessionId);
+  }
+
+  // --- starting cwds ---
+  hasStartingCwd(cwd: string): boolean {
+    return this.startingCwdMap.has(cwd);
+  }
+  trackStartingCwd(cwd: string, delta: 1 | -1): void {
+    const remaining = (this.startingCwdMap.get(cwd) ?? 0) + delta;
+    if (remaining <= 0) this.startingCwdMap.delete(cwd);
+    else this.startingCwdMap.set(cwd, remaining);
+  }
+
+  // --- running listeners ---
+  addRunningListener(listener: RunningSessionIdsListener): void {
+    this.runningListenerSet.add(listener);
+  }
+  removeRunningListener(listener: RunningSessionIdsListener): void {
+    this.runningListenerSet.delete(listener);
+  }
+  runningListenerCount(): number {
+    return this.runningListenerSet.size;
+  }
+  allRunningListeners(): RunningSessionIdsListener[] {
+    return Array.from(this.runningListenerSet);
+  }
+
+  // --- raw 注册表 ---
+  registry(): Map<string, AgentSessionWrapper> {
+    return this.sessions;
+  }
+  startLocks(): Map<string, StartLock> {
+    return this.startLockMap;
+  }
+  startingCwds(): Map<string, number> {
+    return this.startingCwdMap;
+  }
+  runningListeners(): Set<RunningSessionIdsListener> {
+    return this.runningListenerSet;
+  }
+}
+
+declare global {
+  var __piEngine: AgentEngine | undefined;
+}
+
+let cachedEngine: AgentEngine | undefined;
+
+/** 单例。实例常驻 globalThis.__piEngine，跨模块热重载存活。 */
+export function getEngine(): AgentEngine {
+  if (!cachedEngine) {
+    cachedEngine = globalThis.__piEngine ??= new InProcessAgentEngine();
+  }
+  return cachedEngine;
+}

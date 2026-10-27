@@ -5,6 +5,7 @@ import { randomUUID } from "crypto";
 import { existsSync, realpathSync, writeFileSync } from "fs";
 import { resolve } from "path";
 import { validateAgentImages } from "./image-attachments";
+import { getEngine } from "./agent-engine";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
 import {
@@ -2161,27 +2162,9 @@ export class AgentSessionWrapper {
 // Session registry
 // ============================================================================
 
-declare global {
-  var __piSessions: Map<string, AgentSessionWrapper> | undefined;
-  var __piStartLocks: Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>> | undefined;
-  var __piStartingSessionCwds: Map<string, number> | undefined;
-}
-
 function getRegistry(): Map<string, AgentSessionWrapper> {
-  if (!globalThis.__piSessions) {
-    globalThis.__piSessions = new Map();
-    const destroy = () => globalThis.__piSessions?.forEach((session) => session.destroy());
-    const shutdown = () => {
-      const sessions = Array.from(globalThis.__piSessions?.values() ?? []);
-      void Promise.allSettled(sessions.map((session) => session.shutdown()));
-    };
-    // Node cannot await work from an exit handler; direct destruction starts
-    // extension cleanup synchronously as a final best effort.
-    process.once("exit", destroy);
-    process.once("SIGINT", shutdown);
-    process.once("SIGTERM", shutdown);
-  }
-  return globalThis.__piSessions;
+  // 状态容器已收进 AgentEngine（lib/agent-engine.ts），此 getter 仅一行委托。
+  return getEngine().registry();
 }
 
 function registerRpcWrapper(wrapper: AgentSessionWrapper): void {
@@ -2241,8 +2224,7 @@ export function abortSubagent(sessionId: string) {
 }
 
 function getLocks(): Map<string, Promise<{ session: AgentSessionWrapper; realSessionId: string }>> {
-  if (!globalThis.__piStartLocks) globalThis.__piStartLocks = new Map();
-  return globalThis.__piStartLocks;
+  return getEngine().startLocks();
 }
 
 const CLOSING_SESSION_WAIT_MARGIN_MS = 1_000;
@@ -2286,8 +2268,7 @@ function normalizeRpcCwd(cwd: string): string {
 }
 
 function getStartingSessionCwds(): Map<string, number> {
-  if (!globalThis.__piStartingSessionCwds) globalThis.__piStartingSessionCwds = new Map();
-  return globalThis.__piStartingSessionCwds;
+  return getEngine().startingCwds();
 }
 
 function trackStartingSession(cwd: string): () => void {
@@ -2540,13 +2521,8 @@ export async function destroyRpcSessionsForCwd(cwd: string): Promise<number> {
   return sessions.length;
 }
 
-declare global {
-  var __piRunningListeners: Set<(ids: string[]) => void> | undefined;
-}
-
 function getRunningListeners(): Set<(ids: string[]) => void> {
-  if (!globalThis.__piRunningListeners) globalThis.__piRunningListeners = new Set();
-  return globalThis.__piRunningListeners;
+  return getEngine().runningListeners();
 }
 
 export function subscribeRunningSessions(listener: (ids: string[]) => void): () => void {
