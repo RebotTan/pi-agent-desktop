@@ -272,3 +272,97 @@ changes to shared choices also run `node e2e/option-controls.mjs`.
 --accent --user-bg --tool-bg
 --font-mono
 ```
+
+---
+
+## 开发流程（fork 二开，每个会话必须遵守）
+
+本节是 fork 二开的工程纪律，优先级与上方 pi-web 硬规则相同。改编自
+mattpocock/skills 的工程链路，适配 solo / 业余 / Tauri 桌面应用发版。**这一节
+是流程的唯一权威**；`docs/process/flow.md`（如有）只放模板和细节，规则在这里。
+
+### 分支模型
+
+- `main`：稳定线。只接收 `dev` 合并和 changesets 发版 PR，不直接开发。
+- `dev`：所有二开开发在此分支（已建）。新工单从 `dev` 切子分支或直接在 `dev`
+  上提交；solo 默认直接在 `dev` 上走，不强制 worktree。
+- **禁止在 `main` 上直接写代码或 `npm run dist`。**
+
+### 开发链路（每张工单走一遍）
+
+```
+grill(已做) → spec → ticket → implement → code-review → pr → changeset → merge dev→main → release
+```
+
+1. **grill**：决策对齐。本 fork 的方向已在 grill 轮里定（基座=fork pi-web、
+   进程内嵌、桌面+可交互 web、先做进程抽象层）。新方向变更必须再开一轮
+   grill，结果落进 `GLOSSARY.md` 词汇表 + `.agents/adr/` 决策记录。
+2. **spec**：多会话工作才写。单会话能完成的小改直接跳到 ticket。spec 记录
+   已定的决策（不重新决策），存 `.scratch/specs/NNNN-*.md`。
+3. **ticket**：把 spec 切成 tracer-bullet 工单，每张一个上下文窗口大小，存
+   `.scratch/tickets/NNNN-*.md`，含：目标、seam（在哪个公共边界测试）、
+   验收标准、out-of-scope。**一个工单 = 一次 implement 会话 = 一个提交。**
+4. **implement**：读工单 → 不重新决策 → 在预定义 seam 上 TDD（红绿重构）
+   → 边写边 `tsc --noEmit` → 结尾跑 `npm run lint` → 提交到 `dev`。**implement
+   不重开计划、不追问方案、不替上游决策翻案。**
+5. **code-review**：两轴审 `git diff origin/main...HEAD`——Standards（是否遵守
+   本文件规则）+ Spec（是否符合工单）。fresh 会话审，避免自审偏见。
+6. **pr**：PR body 三段——**Summary**（可视化：调用树/文件树/mermaid/diff 形状，
+   少散文）+ **Evidence**（前后对比：失败测试现通过 / 截图 / 控制台输出）+
+   **Merge Danger**（单向门还是双向门 + 爆炸半径）。schema 迁移、删除公开
+   API、对外发数据 = 单向门，必须慢审。
+7. **changeset**：每个 PR 附加一个 `.changeset/NNNN-*.md`（patch/minor/major +
+   一句话描述）。漏 changeset 的 PR 不合并。
+
+### 发版流程（changesets）
+
+1. `dev` → `main` 合并触发 `.github/workflows/release.yml`。
+2. changesets/action 在 `main` 上开「chore: version」PR：`changeset version`
+   升 `package.json` 版本号 + 写 `CHANGELOG.md`。
+3. 人工确认 version PR → 合并 → 手动 `npm run dist:win`（或对应平台）出安装包
+   → 打 tag。**暂不自动构建 Tauri 安装包**（solo 手动触发；将来要自动化再加
+   `tauri-action`）。
+4. `package.json` 的 version 是唯一版本源；`src-tauri/tauri.conf.json` 的
+   `version` 跟随同步（改动后跑 `npm run desktop:prepare && npm run desktop:verify`）。
+
+### 决策记录（ADR）与词汇表
+
+- **`.agents/adr/NNNN-*.md`**：每个不可逆或影响深远的架构决策写一份 ADR
+  （标题 + 上下文 + 决策 + 后果 + 状态）。第一个：`0001-agent-engine-seam.md`
+  （AgentEngine 接口作为多 Agent 编排/SSH/插件的接入 seam）。
+- **`GLOSSARY.md`**：fork 二开引入的术语统一在此定义（AgentEngine、
+  InProcessAgentEngine、SessionStore、seam、ticket、spec、changeset）。
+  命名、文件、函数名都从词汇表取词，减少 token、保持一致。
+- **`SCOPE.md`**：fork 做什么 / 不做什么的总览。
+- **`.out-of-scope/frozen.md`**：明确冻结、不在本 fork 做的项。
+
+### 冻结项（不做，改动需先开 grill 翻案）
+
+- 重造 pi 内置 subagent（SDK 自带，不碰）
+- 桌面宠物、live-voice 语音
+- DSH 后端、生图后端（保持 pi 单后端）
+- GPUI / 纯 Rust 重写（评估过，6–12 人月，不划算）
+- 重写 `AgentSessionWrapper.send` 的命令状态机
+
+### 工单 / spec / changeset 文件格式
+
+- 工单 `.scratch/tickets/NNNN-kebab-name.md`：`## 目标` `## Seam` `## 验收标准`
+  `## Out-of-scope`。
+- spec `.scratch/specs/NNNN-kebab-name.md`：多会话工作才写，记录已定决策。
+- changeset `.changeset/NNNN-kebab-name.md`：`---\n"pideck-fork": patch\n---\n一句话描述`（包名以 `package.json` name 为准）。
+
+### 验收硬门（每个 PR 必过）
+
+1. `tsc --noEmit` 通过
+2. `npm run lint` 通过
+3. 涉及共享菜单/选择控件：`node --test scripts/ui-menu-consistency.test.mjs` +
+   `node e2e/option-controls.mjs`
+4. 涉及 fork 护栏：`node --test scripts/fork-extractions.test.mjs`
+5. 手测：`npm run dev` 起会话能对话 / 工具调用 / 分支 / fork
+6. PR body 三段齐全 + 带 changeset
+
+### 与 pi-web 上游的关系
+
+- 本节是 fork 新增，与上方 pi-web 架构规则各管一摊：上面讲**代码规则**，本节讲**工程流程**。
+- 上游 merge 时本节保留不动；`scripts/fork-extractions.test.mjs` 不覆盖本节
+  （本节是纯增量，不替换上游任何内容）。
