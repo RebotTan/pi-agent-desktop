@@ -60,6 +60,7 @@ import type { McpHost } from "./mcp-host";
 import { mcpPromptPreparation, type McpCommandCandidate } from "./mcp-command";
 import { createReadOnlyMcpPolicyExtension } from "./mcp-read-only-policy";
 import { createApprovalPolicyExtension } from "./approval-policy-extension";
+import { getAgentEventBus } from "./agent-event-bus";
 import { isNestedToolExecutionEvent } from "./agent-event-wire";
 import {
   appendClearedSessionToolSelection,
@@ -2182,6 +2183,7 @@ function registerRpcWrapper(wrapper: AgentSessionWrapper): void {
     // switch, fork/clone replacement); push the new set so sidebars clear
     // its spinner instead of waiting for the next broadcast.
     notifyRunningChange();
+    getAgentEventBus().emit({ type: "session_ended", sessionId });
   });
   // A wrapper registered before a hot reload still unregisters by id alone.
   const previous = registry.get(sessionId);
@@ -2190,6 +2192,7 @@ function registerRpcWrapper(wrapper: AgentSessionWrapper): void {
   }
   registry.set(sessionId, wrapper);
   wrapper.start();
+  getAgentEventBus().emit({ type: "session_started", sessionId });
   if (!wrapper.isChatOnly()) wrapper.beginExtensionBinding();
 }
 
@@ -2529,6 +2532,9 @@ export function notifyRunningChange(): void {
     // A future subscriber receives its own initial snapshot. Clear this one so
     // its first state transition cannot match stale state from an old listener.
     lastRunningSnapshot = "";
+    // The event bus is independent of the running listener set: emit even when
+    // no running listener is subscribed, so the global event stream stays live.
+    getAgentEventBus().emit({ type: "running_changed", ids: [...getRunningRpcSessionIds()] });
     return;
   }
   const ids = getRunningRpcSessionIds();
@@ -2540,6 +2546,7 @@ export function notifyRunningChange(): void {
   for (const listener of listeners) {
     try { listener(ids); } catch { /* ignore listener errors */ }
   }
+  getAgentEventBus().emit({ type: "running_changed", ids: [...ids] });
 }
 
 export function getRunningRpcSessionIds(): string[] {
