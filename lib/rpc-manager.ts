@@ -59,6 +59,7 @@ import { createPiWebBuiltinExtensions } from "./builtin-extensions";
 import type { McpHost } from "./mcp-host";
 import { mcpPromptPreparation, type McpCommandCandidate } from "./mcp-command";
 import { createReadOnlyMcpPolicyExtension } from "./mcp-read-only-policy";
+import { createApprovalPolicyExtension } from "./approval-policy-extension";
 import { isNestedToolExecutionEvent } from "./agent-event-wire";
 import {
   appendClearedSessionToolSelection,
@@ -2738,6 +2739,7 @@ export async function startRpcSession(
             extensionFactories: [
               ...(builtins?.extensions ?? []),
               createReadOnlyMcpPolicyExtension(),
+              createApprovalPolicyExtension(),
               createArtifactGuideExtension(),
               createProjectCommandBashExtension({
                 cwd: sessionCwd,
