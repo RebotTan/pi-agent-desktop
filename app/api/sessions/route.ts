@@ -3,10 +3,9 @@ import { jsonResponse } from "@/lib/json-response";
 import {
   attachSessionProjectInfo,
   getSessionListVersion,
-  listAllSessions,
-  listSessionSummaries,
   mergeSessionLists,
 } from "@/lib/session-reader";
+import { getSessionStore } from "@/lib/session-store";
 import {
   getCompletionNotificationSuppressedRpcSessionIds,
   getRpcSessionInfos,
@@ -33,8 +32,8 @@ export async function GET(req: Request) {
     const summary = searchParams.get("summary") === "1";
     perf?.span("start");
     const persistedSessionsPromise = summary
-      ? listSessionSummaries()
-      : listAllSessions({ force });
+      ? getSessionStore().listSummaries()
+      : getSessionStore().listSessions({ force });
     // Capture before awaiting: mutations during the scan still require a later refresh.
     const sessionListVersion = getSessionListVersion();
     const [persistedSessions, runtimeSessions, chatWorkspaceCwd] = await Promise.all([

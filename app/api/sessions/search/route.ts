@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { listAllSessions } from "@/lib/session-reader";
+import { getSessionStore } from "@/lib/session-store";
 import { searchSessionContents } from "@/lib/session-search";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +18,7 @@ export async function GET(request: Request) {
     // session. The trade-off is that a session created in the last couple of
     // seconds is not searched yet; the stale read schedules the rebuild, so the
     // next search sees it.
-    const sessions = query && !request.signal.aborted ? await listAllSessions({ allowStale: true }) : [];
+    const sessions = query && !request.signal.aborted ? await getSessionStore().listSessions({ allowStale: true }) : [];
     return NextResponse.json(await searchSessionContents(sessions, query, request.signal), { headers });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500, headers });
