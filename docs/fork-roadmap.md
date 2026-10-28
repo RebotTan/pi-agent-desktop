@@ -149,13 +149,28 @@ composer 上方审批卡（允许 / 拒绝）+ Settings › 工具审批 规则�
 
 ---
 
+### 12. SidecarEngine 骨架（多 Agent 隔离的接缝验证）
+
+| 项 | 值 |
+|---|---|
+| ticket | `.scratch/tickets/0013-sidecar-engine-skeleton.md` |
+| seam | `lib/agent-engine-sidecar.ts` 的 `getSidecarEngine(target?)` |
+| 文件 | `lib/agent-engine-sidecar.ts`（新增）、`lib/agent-engine-sidecar.test.mjs`（新增） |
+| 解锁 | 验证 `AgentEngine` 接口足以承载第二个实现；将来真隔离（spawn 子进程）在此换目标引擎 |
+
+PR-1/PR-2 把会话运行时状态收进 `AgentEngine` 接口。骨架版 `SidecarEngine` 实现同一接口，所有语义方法委托给传入的目标引擎（默认 `InProcessAgentEngine`），`startSession` 的协调协议（existing/inflight/closing-wait/锁生命周期）通过调用目标引擎的 `startSession` 获得。
+
+不做 spawn、不做 RPC、不做审批回传 —— 真跨进程隔离涉及审批回传、权限透传、事件转发、~8s 冷启动四件高危事项，任何一件做砸都会推翻方向。骨架先证明接口层面够用；如果证明不了，说明抽象层漏了洞，要先补接口再谈 spawn。
+
+---
+
 ## 二、待做（第三轮及以后）
 
 按投入产出排序。每项标注：依赖的 seam、解锁的能力、预估投入、优先级。
 
 ### 高优先级（直接影响可用性）
 
-#### 12. 插件 UI contribution 落地（第一个真实插件）
+#### 13. 插件 UI contribution 落地（第一个真实插件）
 
 | 项 | 值 |
 |---|---|
@@ -168,7 +183,7 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 
 ### 中优先级（架构演进）
 
-#### 13. SidecarEngine（多 Agent 并行隔离）
+#### 14. SidecarEngine（多 Agent 并行隔离）
 
 | 项 | 值 |
 |---|---|
@@ -177,9 +192,9 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 | 投入 | 1–2 周 |
 | 优先级 | ★★☆ |
 
-每 worker 一个 `pi --mode rpc` 子进程（参考 PiDeck/PI-Desktop 思想，不抄代码避 LGPL）。`SidecarEngine` 实现 `AgentEngine` 接口，`startSession` spawn 子进程，`send` 走 stdio JSON-RPC，`events` 转发子进程事件。主进程 `InProcessAgentEngine` 不变，编排器按需选引擎。
+**接口与骨架已交付（见已交付 #12）**，这一项剩下的是真跨进程隔离：每 worker 一个 `pi --mode rpc` 子进程（参考 PiDeck/PI-Desktop 思想，不抄代码避 LGPL），`SidecarEngine` 内部把「委托目标引擎」换成「spawn 子进程 + stdio JSON-RPC」。
 
-#### 14. SessionStore SQLite 列表镜像
+#### 15. SessionStore SQLite 列表镜像
 
 | 项 | 值 |
 |---|---|
@@ -192,7 +207,7 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 
 降级理由：列表已经有 `lib/session-list-scanner.ts` 的增量 JSON 索引（`pi-web-session-index.json`，按 size+mtime 命中缓存），瓶颈只剩每个会话 `attachSessionProjectInfo` 的 git 调用；而搜索 —— 原先最痛的一刀 —— 已被 FTS5 索引解决。剩下的是「大规模历史 + 用量统计查询」，等会话数上千再说。
 
-#### 15. 外部会话导入转换器
+#### 16. 外部会话导入转换器
 
 | 项 | 值 |
 |---|---|
@@ -205,7 +220,7 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 
 ### 低优先级（纯 UI / 锦上添花）
 
-#### 16. 事件总线出口：webhook / 飞书
+#### 17. 事件总线出口：webhook / 飞书
 
 | 项 | 值 |
 |---|---|
@@ -216,18 +231,18 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 
 订阅 `AgentEventBus`，按规则转发到 webhook。配置存 `~/.pi/agent/webhooks.json`。
 
-#### 17. 用量统计
+#### 18. 用量统计
 
 | 项 | 值 |
 |---|---|
-| seam | 事件总线（PR-5）+ SessionStore SQLite（#14） |
+| seam | 事件总线（PR-5）+ SessionStore SQLite（#15） |
 | 解锁 | 用量热力图/每日/模型/项目统计 |
 | 投入 | 2–3 天 |
 | 优先级 | ★☆☆ |
 
 订阅 usage 事件 → 持久化到 SQLite → 前端统计面板。
 
-#### 18. SSH RemoteEngine
+#### 19. SSH RemoteEngine
 
 | 项 | 值 |
 |---|---|
@@ -238,7 +253,7 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 
 `RemoteEngine` 实现 `AgentEngine`，`startSession` SSH 连远程机起 pi sidecar，`send`/`events` 走 SSH 通道。远期。
 
-#### 19. Plan Mode
+#### 20. Plan Mode
 
 | 项 | 值 |
 |---|---|
@@ -249,7 +264,7 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 
 启动参数带 mode=plan，agent 只规划不执行，计划确认后切 mode=execute。复用审批管道的「挂起等确认」机制。
 
-#### 20. 上下文蒸发
+#### 21. 上下文蒸发
 
 | 项 | 值 |
 |---|---|
@@ -290,4 +305,4 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 |---|---|
 | 0.10.1 | PR-1~PR-6（5 个 seam + 插件骨架）+ 发版基建 + releaseBody 自动化 |
 | 0.10.2 | PR-5 `session_ended` 端测（`b02ad78`）+ 平台裁剪（`6e08e34`/`a6da4bc`）+ releaseBody（`c35ae95`）+ 消息轨道（`e33c22d`）+ 审批 UI（`f5f8495`） |
-| 未定 | #12~#20 待做项，按优先级逐个 PR |
+| 未定 | #13~#21 待做项，按优先级逐个 PR |
