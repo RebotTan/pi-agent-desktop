@@ -1,5 +1,15 @@
 # @agegr/pi-web
 
+## 0.10.3
+
+### Patch Changes
+
+- [`f5f8495`](https://github.com/RebotTan/pi-agent-desktop/commit/f5f8495eecfab9afda1ff8d6ded13d3c3b99d63c) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Add the tool approval UI: a card above the composer appears when a policy rule holds a tool call for approval (allow / deny), and Settings › Tool approval edits the rule table (`pattern` → allow, ask, deny with `*` wildcards). The approval backend from the previous release is now reachable without curl.
+
+- [`1a51f5e`](https://github.com/RebotTan/pi-agent-desktop/commit/1a51f5ef0cb5f24288ab4cb71ea9ac69a249b95f) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Enlarge the login form, approval card and rule editor touch targets on narrow screens.
+
+- [`11a69c5`](https://github.com/RebotTan/pi-agent-desktop/commit/11a69c59f7dadd474d17d0c1dafe0f46a5afa6c3) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Scope the message-rail live dot to the track's last direct row and interpolate the approval "more" count via the i18n params.
+
 ## 0.10.2
 
 ### Patch Changes
