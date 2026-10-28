@@ -14,6 +14,7 @@
 // 见 .agents/adr/0001-agent-engine-seam.md、GLOSSARY.md。
 // 状态持有（私有字段）+ 生命周期（process 信号）都在这里，不再藏在 getter 副作用里。
 
+import type { SessionHandle } from "./session-handle";
 import type { AgentSessionWrapper } from "./rpc-manager";
 
 /** closingSessionWait 无 options.shutdownDeadlineMs 时的兜底（与 pi-web 默认一致）。 */
@@ -23,10 +24,10 @@ const DEFAULT_SHUTDOWN_DEADLINE_MS = 5_000;
 export type RunningSessionIdsListener = (ids: string[]) => void;
 
 /** 一次会话启动的结果：wrapper + 真实会话 id（可能因复用/去重与请求 id 不同）。 */
-export type SessionStartResult = { session: AgentSessionWrapper; realSessionId: string };
+export type SessionStartResult<H extends SessionHandle = AgentSessionWrapper> = { session: H; realSessionId: string };
 
 /** 单次捕获的 startRpcSession 在途 promise（inflight 去重用）。 */
-export type StartLock = Promise<SessionStartResult>;
+export type StartLock<H extends SessionHandle = AgentSessionWrapper> = Promise<SessionStartResult<H>>;
 
 /**
  * 会话运行时引擎的契约。
@@ -37,18 +38,18 @@ export type StartLock = Promise<SessionStartResult>;
  * 会话启动的并发协调协议（startRpcSession）已收进 startSession；
  * 后续 PR 再把剩余调用点逐步收敛到语义方法上。
  */
-export interface AgentEngine {
+export interface AgentEngine<H extends SessionHandle = AgentSessionWrapper> {
   // --- session registry ---
-  getSession(sessionId: string): AgentSessionWrapper | undefined;
-  setSession(sessionId: string, wrapper: AgentSessionWrapper): void;
+  getSession(sessionId: string): H | undefined;
+  setSession(sessionId: string, wrapper: H): void;
   deleteSession(sessionId: string): void;
   sessionCount(): number;
-  allSessions(): AgentSessionWrapper[];
-  allEntries(): Array<[string, AgentSessionWrapper]>;
+  allSessions(): H[];
+  allEntries(): Array<[string, H]>;
 
   // --- start locks（startRpcSession 的 inflight 去重）---
-  getStartLock(sessionId: string): StartLock | undefined;
-  setStartLock(sessionId: string, lock: StartLock): void;
+  getStartLock(sessionId: string): StartLock<H> | undefined;
+  setStartLock(sessionId: string, lock: StartLock<H>): void;
   deleteStartLock(sessionId: string): void;
 
   // --- starting cwds（新会话热路径的去重/忙检测）---
@@ -69,9 +70,9 @@ export interface AgentEngine {
    */
   startSession(
     sessionId: string,
-    assembler: () => Promise<SessionStartResult>,
+    assembler: () => Promise<SessionStartResult<H>>,
     options?: { shutdownDeadlineMs?: number },
-  ): Promise<SessionStartResult>;
+  ): Promise<SessionStartResult<H>>;
   /**
    * 等待 `sessionId` 正在关闭的 wrapper 释放，或 null（无关闭中 wrapper）。
    * deadlineMs 由调用方给（rpc-manager 的 SESSION_SHUTDOWN_DEADLINE_MS），
@@ -81,9 +82,9 @@ export interface AgentEngine {
 
   // --- raw 注册表（rpc-manager 内部访问函数过渡用，逐步收敛）---
   /** rpc-manager 的 getRegistry() 委托目标。 */
-  registry(): Map<string, AgentSessionWrapper>;
+  registry(): Map<string, H>;
   /** rpc-manager 的 getLocks() 委托目标。 */
-  startLocks(): Map<string, StartLock>;
+  startLocks(): Map<string, StartLock<H>>;
   /** rpc-manager 的 getStartingSessionCwds() 委托目标。 */
   startingCwds(): Map<string, number>;
   /** rpc-manager 的 getRunningListeners() 委托目标。 */
@@ -97,7 +98,7 @@ export interface AgentEngine {
  * 扩展清理是最后的尽力而为）；
  * SIGINT/SIGTERM → allSettled shutdown。
  */
-export class InProcessAgentEngine implements AgentEngine {
+export class InProcessAgentEngine implements AgentEngine<AgentSessionWrapper> {
   private readonly sessions = new Map<string, AgentSessionWrapper>();
   private readonly startLockMap = new Map<string, StartLock>();
   private readonly startingCwdMap = new Map<string, number>();

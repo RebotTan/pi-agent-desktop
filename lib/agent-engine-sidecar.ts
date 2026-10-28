@@ -25,6 +25,7 @@ import type {
 } from "./agent-engine";
 import { getEngine } from "./agent-engine";
 import type { AgentSessionWrapper } from "./rpc-manager";
+import type { SessionHandle } from "./session-handle";
 
 /**
  * 同进程、跨会话槽的 SidecarEngine。
@@ -33,14 +34,14 @@ import type { AgentSessionWrapper } from "./rpc-manager";
  * InProcessAgentEngine）；`startSession` 的协调协议通过调用目标引擎的
  * `startSession` 获得（目标引擎已经实现完整协议，骨架不复制、不覆盖）。
  */
-export class SidecarEngine implements AgentEngine {
-  constructor(private readonly target: AgentEngine) {}
+export class SidecarEngine<H extends SessionHandle = AgentSessionWrapper> implements AgentEngine<H> {
+  constructor(private readonly target: AgentEngine<H>) {}
 
   // --- session registry ---
-  getSession(sessionId: string): AgentSessionWrapper | undefined {
+  getSession(sessionId: string): H | undefined {
     return this.target.getSession(sessionId);
   }
-  setSession(sessionId: string, wrapper: AgentSessionWrapper): void {
+  setSession(sessionId: string, wrapper: H): void {
     this.target.setSession(sessionId, wrapper);
   }
   deleteSession(sessionId: string): void {
@@ -49,18 +50,18 @@ export class SidecarEngine implements AgentEngine {
   sessionCount(): number {
     return this.target.sessionCount();
   }
-  allSessions(): AgentSessionWrapper[] {
+  allSessions(): H[] {
     return this.target.allSessions();
   }
-  allEntries(): Array<[string, AgentSessionWrapper]> {
+  allEntries(): Array<[string, H]> {
     return this.target.allEntries();
   }
 
   // --- start locks ---
-  getStartLock(sessionId: string): StartLock | undefined {
+  getStartLock(sessionId: string): StartLock<H> | undefined {
     return this.target.getStartLock(sessionId);
   }
-  setStartLock(sessionId: string, lock: StartLock): void {
+  setStartLock(sessionId: string, lock: StartLock<H>): void {
     this.target.setStartLock(sessionId, lock);
   }
   deleteStartLock(sessionId: string): void {
@@ -92,9 +93,9 @@ export class SidecarEngine implements AgentEngine {
   // --- 会话启动协调 ---
   startSession(
     sessionId: string,
-    assembler: () => Promise<SessionStartResult>,
+    assembler: () => Promise<SessionStartResult<H>>,
     options?: { shutdownDeadlineMs?: number },
-  ): Promise<SessionStartResult> {
+  ): Promise<SessionStartResult<H>> {
     return this.target.startSession(sessionId, assembler, options);
   }
   closingSessionWait(sessionId: string, deadlineMs: number): Promise<void> | null {
@@ -102,10 +103,10 @@ export class SidecarEngine implements AgentEngine {
   }
 
   // --- raw 注册表 ---
-  registry(): Map<string, AgentSessionWrapper> {
+  registry(): Map<string, H> {
     return this.target.registry();
   }
-  startLocks(): Map<string, StartLock> {
+  startLocks(): Map<string, StartLock<H>> {
     return this.target.startLocks();
   }
   startingCwds(): Map<string, number> {
