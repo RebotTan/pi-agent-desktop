@@ -48,6 +48,36 @@ interface UseGlobalKeyboardShortcutsOptions {
   activeCwd?: string | null;
   /** Called by \\ to close the preview panel and return focus to the composer. */
   onCloseRightPanel?: () => void;
+  /** Called by ⌘, (macOS) / Ctrl+, to open Settings. */
+  onOpenSettings?: () => void;
+  /** Called by ⌘/ (macOS) / Ctrl+/ to show the shortcut reference. */
+  onShortcutHelp?: () => void;
+  /** Called by ⌘B / Ctrl+B; browsers keep their own Cmd/Ctrl+B on macOS. */
+  onToggleSidebar?: () => void;
+  /** Called by ⌘L / Ctrl+L; browsers reserve the macOS Cmd+L variant. */
+  onFocusComposer?: () => void;
+}
+
+/**
+ * ⌘, / Ctrl+, opens Settings, the shortcut every desktop app's preferences use.
+ * The macOS menu bar already binds ⌘, (src-tauri/src/shell/macos_menu.rs); this
+ * covers Windows, Linux and the browser. Returns whether it took the key.
+ */
+export function handleOpenSettingsShortcut(event: KeyboardEvent, onOpenSettings: (() => void) | undefined): boolean {
+  if (event.key !== "," || !(event.metaKey || event.ctrlKey) || event.shiftKey || event.altKey) return false;
+  if (event.defaultPrevented || !onOpenSettings) return false;
+  event.preventDefault();
+  onOpenSettings();
+  return true;
+}
+
+/** Shortcuts that behave like desktop accelerators: primary modifier required. */
+export function handleShortcutActivation(event: KeyboardEvent, key: string): boolean {
+  return event.key === key
+    && (event.metaKey || event.ctrlKey)
+    && !event.shiftKey
+    && !event.altKey
+    && !event.defaultPrevented;
 }
 
 /**
@@ -57,6 +87,10 @@ interface UseGlobalKeyboardShortcutsOptions {
  *   Esc              – stop the running agent (via module-level abort handler)
  *   ⌘N / Ctrl+N      – create a new session in the active project directory
  *                      (Ctrl+Alt+N still works for backwards familiarity)
+ *   ⌘, / Ctrl+,      – open Settings at the last section
+ *   ⌘/ / Ctrl+/      – show keyboard shortcuts
+ *   ⌘B  / Ctrl+B     – toggle the sidebar (non-macOS browsers may reserve it)
+ *   ⌘L  / Ctrl+L     – focus the composer (macOS browsers may reserve it)
  *
  * Note: Esc inside <textarea> or <input> is deliberately NOT handled here.
  * ChatInput manages its own Esc logic (closing slash / @ file menus, stopping
@@ -67,7 +101,15 @@ interface UseGlobalKeyboardShortcutsOptions {
 export function useGlobalKeyboardShortcuts(
   options: UseGlobalKeyboardShortcutsOptions,
 ): void {
-  const { onNewSession, activeCwd, onCloseRightPanel } = options;
+  const {
+    onNewSession,
+    activeCwd,
+    onCloseRightPanel,
+    onOpenSettings,
+    onShortcutHelp,
+    onToggleSidebar,
+    onFocusComposer,
+  } = options;
 
   useEffect(() => {
     const handler = (e: KeyboardEvent): void => {
@@ -77,14 +119,9 @@ export function useGlobalKeyboardShortcuts(
         return;
       }
 
-      // ---- \: hide the floating preview and go back to the conversation ----
+      // ---- Cmd/Ctrl+\: hide the preview and go back to the conversation ----
       if (
-        e.key === "\\"
-        && !e.metaKey
-        && !e.ctrlKey
-        && !e.altKey
-        && !e.shiftKey
-        && !e.defaultPrevented
+        handleShortcutActivation(e, "\\")
         && onCloseRightPanel
       ) {
         const target = e.target as HTMLElement | null;
@@ -95,6 +132,26 @@ export function useGlobalKeyboardShortcuts(
           e.preventDefault();
           onCloseRightPanel();
         }
+      }
+
+      if (handleOpenSettingsShortcut(e, onOpenSettings)) return;
+
+      if (handleShortcutActivation(e, "/") && onShortcutHelp) {
+        e.preventDefault();
+        onShortcutHelp();
+        return;
+      }
+
+      if (handleShortcutActivation(e, "b") && onToggleSidebar) {
+        e.preventDefault();
+        onToggleSidebar();
+        return;
+      }
+
+      if (handleShortcutActivation(e, "l") && onFocusComposer) {
+        e.preventDefault();
+        onFocusComposer();
+        return;
       }
 
       // ---- ⌘N / Ctrl+N: new session ----
@@ -109,5 +166,13 @@ export function useGlobalKeyboardShortcuts(
 
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
-  }, [activeCwd, onNewSession, onCloseRightPanel]);
+  }, [
+    activeCwd,
+    onFocusComposer,
+    onNewSession,
+    onCloseRightPanel,
+    onOpenSettings,
+    onShortcutHelp,
+    onToggleSidebar,
+  ]);
 }

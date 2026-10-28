@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useLayoutEffect, useState, useCallback, useRef, type ReactNode } from "react";
-import type { SessionInfo } from "@/lib/types";
+import { Fragment, useEffect, useLayoutEffect, useState, useCallback, useRef, type ReactNode } from "react";
+import type { SessionInfo, SessionWorkspaceKind } from "@/lib/types";
 import { listSessionFamilies } from "@/lib/session-family";
 import { dispatchSessionRowContextMenu } from "@/lib/session-row-context-menu";
 import { skillExpansionToCommand } from "@/lib/slash-display";
@@ -10,20 +10,44 @@ import { useI18n } from "@/hooks/useI18n";
 import { formatCompactRelativeTime, formatRelativeTime } from "@/lib/i18n/format";
 import { createPortal } from "react-dom";
 import { ProjectPicker, selectProjectDirectoryNative } from "./ProjectPicker";
-import { AnimatedDropdown, PathLabel, displayCwd, getRecentProjects } from "./path-ui";
-import { APP_PREF_KEYS, getPrefJson, removePref, setPrefJson } from "@/lib/app-prefs";
+import {
+  ProjectContextMenu,
+  currentCheckout,
+  fetchProjectBranchMenu,
+  fetchRemoteBranches,
+  showNativeProjectBranchMenu,
+  showNativeProjectWorktreeMenu,
+  type ProjectBranchMenuState,
+  type ProjectMenuView,
+  type WorktreeEntry,
+} from "./ProjectContextMenu";
+import { useProjectWorktreeActions } from "@/hooks/useProjectWorktreeActions";
+import { getRecentProjects } from "./path-ui";
+import { APP_PREF_KEYS, getPref, getPrefJson, removePref, setPref, setPrefJson } from "@/lib/app-prefs";
 import { groupByProject } from "@/lib/project-group";
+import { getProjectDisplayName, getProjectDisplayNames } from "@/lib/project-display";
 import { notifyDesktop } from "@/lib/desktop-notify";
 import { revealItemInDirNative } from "@/lib/desktop-native";
 import { isTauriDesktop } from "@/lib/desktop-updater";
-import { canUseNativeMenu, menuPointBelow, showNativeMenu, type NativeMenuPoint } from "@/lib/desktop-menu";
+import {
+  canUseNativeMenu,
+  menuPointBelow,
+  showNativeMenu,
+  type NativeMenuEntry,
+  type NativeMenuPoint,
+} from "@/lib/desktop-menu";
 import { getDesktopPlatform, type DesktopPlatform } from "@/lib/desktop-window";
 import { useWindowDrag } from "./desktop";
+import { ChatConfirmDialog } from "./ChatConfirmDialog";
 import { SessionSearch } from "./SessionSearch";
+import { ProjectViewMenu, type ProjectViewMode } from "./ProjectViewMenu";
+import { ChatsSectionMenu } from "./ChatsSectionMenu";
+import { orderChatFamilies, toggleId } from "@/lib/chat-groups";
 import { ScheduledSidebarRow } from "./scheduled/ScheduledSidebarRow";
 import { isScheduledRunSession } from "@/hooks/useScheduledTasks";
 import { prefetchSessionData } from "@/lib/session-data-cache";
 import { isImeComposing } from "@/lib/ime";
+import { appNotify } from "@/lib/notification-store";
 
 function sessionListUrl(summary: boolean, force: boolean): string {
   if (summary) return "/api/sessions?summary=1";
@@ -33,7 +57,7 @@ function sessionListUrl(summary: boolean, force: boolean): string {
 interface Props {
   selectedSessionId: string | null;
   onSelectSession: (session: SessionInfo, isRestore?: boolean, entryId?: string, blockIndex?: number) => void;
-  onNewSession?: (sessionId: string, cwd: string) => void;
+  onNewSession?: (sessionId: string, cwd: string, workspaceKind?: SessionWorkspaceKind) => void;
   initialSessionId?: string | null;
   skipInitialProjectSelection?: boolean;
   onInitialRestoreDone?: () => void;
@@ -44,7 +68,9 @@ interface Props {
     cwd: string | null,
     projectRoot?: string | null,
     projectKey?: string | null,
+    workspaceKind?: SessionWorkspaceKind,
   ) => void;
+  onChatWorkspaceCwdChange?: (cwd: string | null) => void;
   onOpenTerminal?: (cwd: string) => void;
   /** Fired when a session that is not currently selected finishes running.
    *  Lets the app play a cross-workspace completion tone. */
@@ -56,12 +82,6 @@ interface Props {
   /** Opens the Scheduled page; the row under New Session is absent without it. */
   onOpenScheduled?: () => void;
   scheduledOpen?: boolean;
-}
-
-interface WorktreeEntry {
-  path: string;
-  branch: string | null;
-  isMain: boolean;
 }
 
 interface WorktreeState {
@@ -79,16 +99,10 @@ interface WorktreeState {
   worktrees: WorktreeEntry[];
 }
 
-interface ProjectBranchMenuState {
-  root: string;
-  branches: string[];
-  remoteBranches: string[];
-  worktrees: WorktreeEntry[];
-  loaded: boolean;
-}
 interface ProjectSelection {
   root: string;
   key: string;
+  kind: SessionWorkspaceKind;
 }
 
 // Server error codes with a translation; any other code is shown verbatim.
@@ -112,6 +126,10 @@ function saveUnreadSessionIds(ids: Set<string>): void {
   else setPrefJson(APP_PREF_KEYS.unreadSessionIds, [...ids]);
 }
 
+function loadProjectViewMode(): ProjectViewMode {
+  return getPref(APP_PREF_KEYS.projectViewMode) === "timeline" ? "timeline" : "grouped";
+}
+
 
 
 
@@ -121,8 +139,76 @@ interface SessionTreeNode {
 }
 
 const MAX_VISIBLE_PROJECT_SESSIONS = 5;
+const MAX_VISIBLE_CHAT_SESSIONS = 5;
 
 const SESSION_LIST_ITEM_HEIGHT = 54;
+
+function focusSidebarTreeRow(current: HTMLElement, offset: number | "first" | "last") {
+  const rows = Array.from(
+    current.closest(".sidebar-project-tree")?.querySelectorAll<HTMLElement>("[data-sidebar-tree-row]") ?? [],
+  );
+  if (rows.length === 0) return;
+  const index = rows.indexOf(current);
+  const next = offset === "first" || index < 0
+    ? rows[0]
+    : offset === "last"
+      ? rows[rows.length - 1]
+      : rows[Math.max(0, Math.min(rows.length - 1, index + offset))];
+  next.focus();
+}
+
+function handleSidebarTreeKeyDown(
+  event: React.KeyboardEvent<HTMLElement>,
+  handlers: {
+    activate?: () => void;
+    expand?: () => void;
+    collapse?: () => void;
+    rename?: () => void;
+    requestDelete?: () => void;
+  },
+) {
+  if (event.target !== event.currentTarget || isImeComposing(event)) return;
+  const current = event.currentTarget;
+  switch (event.key) {
+    case "ArrowDown":
+      event.preventDefault();
+      focusSidebarTreeRow(current, 1);
+      break;
+    case "ArrowUp":
+      event.preventDefault();
+      focusSidebarTreeRow(current, -1);
+      break;
+    case "Home":
+      event.preventDefault();
+      focusSidebarTreeRow(current, "first");
+      break;
+    case "End":
+      event.preventDefault();
+      focusSidebarTreeRow(current, "last");
+      break;
+    case "ArrowRight":
+      event.preventDefault();
+      handlers.expand?.();
+      break;
+    case "ArrowLeft":
+      event.preventDefault();
+      handlers.collapse?.();
+      break;
+    case "Enter":
+    case " ":
+      event.preventDefault();
+      handlers.activate?.();
+      break;
+    case "F2":
+      event.preventDefault();
+      handlers.rename?.();
+      break;
+    case "Delete":
+      event.preventDefault();
+      handlers.requestDelete?.();
+      break;
+  }
+}
 
 function treeContainsSession(node: SessionTreeNode, sessionId: string): boolean {
   return node.session.id === sessionId || node.children.some((child) => treeContainsSession(child, sessionId));
@@ -172,9 +258,31 @@ function buildSessionTree(sessions: SessionInfo[]): SessionTreeNode[] {
   return roots;
 }
 
-export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onProjectsChange, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange, headerControls, onOpenTerminal, onOpenScheduled, scheduledOpen = false }: Props) {
+function readIdSetPref(key: Parameters<typeof getPrefJson>[0]): Set<string> {
+  const stored = getPrefJson<unknown>(key);
+  return Array.isArray(stored)
+    ? new Set(stored.filter((id): id is string => typeof id === "string"))
+    : new Set();
+}
+
+export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSession, initialSessionId, skipInitialProjectSelection, onInitialRestoreDone, refreshKey, onSessionDeleted, selectedCwd: selectedCwdProp, onCwdChange, onChatWorkspaceCwdChange, onProjectsChange, onBackgroundTaskDone, onRunningSessionIdsChange, onSessionsChange, headerControls, onOpenTerminal, onOpenScheduled, scheduledOpen = false }: Props) {
   const { t } = useI18n();
   const [allSessions, setAllSessions] = useState<SessionInfo[]>([]);
+  const [chatWorkspaceCwd, setChatWorkspaceCwd] = useState<string | null>(null);
+  // Same fold model as a project: folding drops the extra pages, so the next
+  // unfold starts again from the first five chats.
+  const [chatsCollapsed, setChatsCollapsed] = useState(() => getPref(APP_PREF_KEYS.collapsedChats) === "1");
+  const [chatSessionPages, setChatSessionPages] = useState(() => {
+    const stored = getPrefJson<unknown>(APP_PREF_KEYS.chatSessionPages);
+    return typeof stored === "number" && Number.isInteger(stored) && stored > 0 ? stored : 0;
+  });
+  const [pinnedChats, setPinnedChats] = useState<Set<string>>(() => readIdSetPref(APP_PREF_KEYS.pinnedChats));
+  const [archivedChats, setArchivedChats] = useState<Set<string>>(() => readIdSetPref(APP_PREF_KEYS.archivedChats));
+  const [showArchivedChats, setShowArchivedChats] = useState(false);
+  const [chatsMenuOpen, setChatsMenuOpen] = useState(false);
+  const [chatsMenuPos, setChatsMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const chatsMenuRef = useRef<HTMLDivElement>(null);
+  const chatsMenuButtonRef = useRef<HTMLButtonElement>(null);
   // Tracked in a ref only: the version is compared against the polled value to
   // decide whether the list needs reloading, and no render reads it.
   const sessionListVersionRef = useRef<number | null>(null);
@@ -190,7 +298,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     if (isTauriDesktop()) setDesktopPlatform(getDesktopPlatform());
   }, []);
   const windowDrag = useWindowDrag();
-  const [wtFilter, setWtFilter] = useState("");
   const [sessionQuery, setSessionQuery] = useState("");
   // Content search (server-side, across every session) vs. the default title
   // filter over the loaded project tree. Enter engages it; clearing the box
@@ -198,10 +305,16 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const [contentSearch, setContentSearch] = useState(false);
   // Worktree switcher state
   const [worktreeState, setWorktreeState] = useState<WorktreeState | null>(null);
-  const lastNotifiedProjectRef = useRef<{ cwd: string | null; key: string | null } | null>(null);
+  const lastNotifiedProjectRef = useRef<{
+    cwd: string | null;
+    key: string | null;
+    kind: SessionWorkspaceKind;
+  } | null>(null);
 
   // The checked-out worktree for the current selection (falls back to the
   // project's main worktree when the selection is not itself a worktree).
+  // Prefers the server-resolved currentWorktreePath: the browser cannot apply
+  // Node path rules, so a raw comparison misses on Windows.
   const currentWorktree = worktreeState
     ? worktreeState.worktrees.find((worktree) => worktree.path === selectedCwd)
       ?? (worktreeState.forCwd === selectedCwd && worktreeState.currentWorktreePath
@@ -211,53 +324,72 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     : undefined;
   const currentWorktreePath = currentWorktree?.path ?? null;
 
+  /** Chat detection always comes from server-provided identity or the exact
+   *  chat cwd the server returned. The browser never derives the hidden path. */
+  const isChatCwd = useCallback((cwd: string | null): boolean => {
+    if (!cwd) return false;
+    if (chatWorkspaceCwd && cwd === chatWorkspaceCwd) return true;
+    return allSessions.some((session) => session.workspaceKind === "chat" && session.cwd === cwd);
+  }, [allSessions, chatWorkspaceCwd]);
+  const selectedCwdIsChat = selectedCwd ? isChatCwd(selectedCwd) : false;
+
   /** Resolve the project root for a cwd from the freshest data available */
   const projectRootFor = useCallback((cwd: string | null): string | null => {
     if (!cwd) return null;
+    if (isChatCwd(cwd)) return null;
     if (worktreeState && worktreeState.forCwd === cwd) return worktreeState.projectRoot;
     // Any path in the loaded worktree list belongs to that project — covers
     // worktrees without sessions, so switching to them keeps the row mounted.
     if (worktreeState?.worktrees.some((w) => w.path === cwd)) return worktreeState.projectRoot;
     const match = allSessions.find((s) => s.cwd === cwd);
     return match?.projectRoot ?? cwd;
-  }, [worktreeState, allSessions]);
-  const [wtDropdownOpen, setWtDropdownOpen] = useState(false);
-  const [wtNewOpen, setWtNewOpen] = useState(false);
-  const [wtNewBranch, setWtNewBranch] = useState("");
-  const [wtBranches, setWtBranches] = useState<string[]>([]);
-  // Remote-only branch names (prefix stripped) for the switcher's branch list
-  const [wtRemoteBranches, setWtRemoteBranches] = useState<string[]>([]);
-  // False until the first branch-list response lands, so the "no other
-  // branches" hint is not flashed while the list is still loading.
-  const [wtBranchesLoaded, setWtBranchesLoaded] = useState(false);
-  const [wtError, setWtError] = useState<string | null>(null);
-  const [wtBusy, setWtBusy] = useState(false);
+  }, [allSessions, isChatCwd, worktreeState]);
   // Branch currently being checked out (name shown dimmed with a spinner)
   const [wtSwitchingBranch, setWtSwitchingBranch] = useState<string | null>(null);
-  const [wtFetching, setWtFetching] = useState(false);
-  const [wtConfirmRemove, setWtConfirmRemove] = useState<{ path: string; force: boolean } | null>(null);
-  const [worktreeLoadingCwd, setWorktreeLoadingCwd] = useState<string | null>(null);
   // Ticked by the poll/focus effect below so the worktree row reflects
   // branches checked out outside pi (terminal, IDE) without a manual reload.
   const [wtPollTick, setWtPollTick] = useState(0);
-  const wtDropdownRef = useRef<HTMLDivElement>(null);
-  const wtNewInputRef = useRef<HTMLInputElement>(null);
   const [collapsedProjects, setCollapsedProjects] = useState<Set<string>>(() => {
     const stored = getPrefJson<unknown>(APP_PREF_KEYS.collapsedProjects);
     return Array.isArray(stored)
       ? new Set(stored.filter((root): root is string => typeof root === "string"))
       : new Set();
   });
-  const [expandedProjectSessions, setExpandedProjectSessions] = useState<Set<string>>(() => new Set());
+  const [projectSessionPages, setProjectSessionPages] = useState<Record<string, number>>(() => {
+    const stored = getPrefJson<unknown>(APP_PREF_KEYS.expandedProjects);
+    if (Array.isArray(stored)) {
+      // Older builds stored a set of fully expanded projects. Start those at
+      // one extra page instead of restoring the unbounded list.
+      return Object.fromEntries(
+        stored
+          .filter((root): root is string => typeof root === "string")
+          .map((root) => [root, 1]),
+      );
+    }
+    if (!stored || typeof stored !== "object") return {};
+    return Object.fromEntries(
+      Object.entries(stored).flatMap(([root, pages]) => (
+        typeof pages === "number" && Number.isFinite(pages) && pages > 0
+          ? [[root, Math.floor(pages)]]
+          : []
+      )),
+    );
+  });
   const [archivedProjectRoots, setArchivedProjectRoots] = useState<Set<string>>(() => {
     const stored = getPrefJson<unknown>(APP_PREF_KEYS.archivedProjects);
     return Array.isArray(stored)
       ? new Set(stored.filter((root): root is string => typeof root === "string"))
       : new Set();
   });
+  const [projectViewMode, setProjectViewMode] = useState<ProjectViewMode>(loadProjectViewMode);
+  const [projectViewMenuOpen, setProjectViewMenuOpen] = useState(false);
+  const [projectViewMenuPos, setProjectViewMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const projectViewMenuRef = useRef<HTMLDivElement>(null);
+  const projectViewMenuButtonRef = useRef<HTMLButtonElement>(null);
   const [projectMenu, setProjectMenu] = useState<{ root: string } | null>(null);
   const [projectMenuPos, setProjectMenuPos] = useState<{ top: number; left: number } | null>(null);
   const [projectBranchMenu, setProjectBranchMenu] = useState<ProjectBranchMenuState | null>(null);
+  const [projectMenuView, setProjectMenuView] = useState<ProjectMenuView>("actions");
   const [projectBranchLoading, setProjectBranchLoading] = useState(false);
   // "Open in file manager" on a project row. Only the server can raise a
   // file-manager window, and only when the browser runs on that same machine,
@@ -314,6 +446,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   );
   const projectMenuRef = useRef<HTMLDivElement>(null);
   const [projectPickerOpen, setProjectPickerOpen] = useState(false);
+  // The chat whose conversation is being copied into a project (the picker is open for it).
+  const [continueChat, setContinueChat] = useState<SessionInfo | null>(null);
   const [runningSessionIds, setRunningSessionIds] = useState<Set<string>>(() => new Set());
   const [unreadSessionIds, setUnreadSessionIds] = useState<Set<string>>(() => loadUnreadSessionIds());
   const previousRunningSessionIdsRef = useRef<Set<string>>(new Set());
@@ -352,10 +486,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         sessionListVersion: number;
         runningSessionIds?: string[];
         completionNotificationSuppressedSessionIds?: string[];
+        chatWorkspaceCwd?: string | null;
       };
       if (loadId !== sessionLoadIdRef.current) return;
       sessionListVersionRef.current = data.sessionListVersion;
       setAllSessions(data.sessions);
+      setChatWorkspaceCwd(data.chatWorkspaceCwd ?? null);
       // Treat the fetched running set as an initial fallback only. Once the
       // live SSE stream is connected, a slow session-list fetch cannot overwrite it.
       if (!sseAuthoritativeRef.current) {
@@ -380,6 +516,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       if (loadId === sessionLoadIdRef.current) setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    // The server always returns the hidden cwd. Do not publish the initial
+    // null before the first list load, or it would overwrite the shell's
+    // earlier /api/chat-workspace answer.
+    if (chatWorkspaceCwd) onChatWorkspaceCwdChange?.(chatWorkspaceCwd);
+  }, [chatWorkspaceCwd, onChatWorkspaceCwdChange]);
 
   const initialLoadDone = useRef(false);
   useEffect(() => {
@@ -425,6 +568,31 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     if (collapsedProjects.size === 0) removePref(APP_PREF_KEYS.collapsedProjects);
     else setPrefJson(APP_PREF_KEYS.collapsedProjects, [...collapsedProjects]);
   }, [collapsedProjects]);
+
+  useEffect(() => {
+    if (chatsCollapsed) setPref(APP_PREF_KEYS.collapsedChats, "1");
+    else removePref(APP_PREF_KEYS.collapsedChats);
+  }, [chatsCollapsed]);
+
+  useEffect(() => {
+    if (pinnedChats.size === 0) removePref(APP_PREF_KEYS.pinnedChats);
+    else setPrefJson(APP_PREF_KEYS.pinnedChats, [...pinnedChats]);
+  }, [pinnedChats]);
+
+  useEffect(() => {
+    if (archivedChats.size === 0) removePref(APP_PREF_KEYS.archivedChats);
+    else setPrefJson(APP_PREF_KEYS.archivedChats, [...archivedChats]);
+  }, [archivedChats]);
+
+  useEffect(() => {
+    if (chatSessionPages === 0) removePref(APP_PREF_KEYS.chatSessionPages);
+    else setPrefJson(APP_PREF_KEYS.chatSessionPages, chatSessionPages);
+  }, [chatSessionPages]);
+
+  useEffect(() => {
+    if (Object.keys(projectSessionPages).length === 0) removePref(APP_PREF_KEYS.expandedProjects);
+    else setPrefJson(APP_PREF_KEYS.expandedProjects, projectSessionPages);
+  }, [projectSessionPages]);
 
   useEffect(() => {
     // Live running status via SSE — no polling. The server pushes the current
@@ -487,11 +655,70 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         setProjectMenu(null);
         setProjectMenuPos(null);
         setProjectBranchMenu(null);
+        setProjectMenuView("actions");
       }
     };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [projectMenu]);
+
+  useEffect(() => {
+    if (!projectViewMenuOpen || !projectViewMenuPos) return;
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (projectViewMenuRef.current?.contains(target)) return;
+      if (projectViewMenuButtonRef.current?.contains(target)) return;
+      setProjectViewMenuOpen(false);
+      setProjectViewMenuPos(null);
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !isImeComposing(event)) {
+        setProjectViewMenuOpen(false);
+        setProjectViewMenuPos(null);
+      }
+    };
+    const closeOnViewportChange = () => {
+      setProjectViewMenuOpen(false);
+      setProjectViewMenuPos(null);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("scroll", closeOnViewportChange, true);
+    window.addEventListener("resize", closeOnViewportChange);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("scroll", closeOnViewportChange, true);
+      window.removeEventListener("resize", closeOnViewportChange);
+    };
+  }, [projectViewMenuOpen, projectViewMenuPos]);
+
+  useEffect(() => {
+    if (!chatsMenuOpen || !chatsMenuPos) return;
+    const close = () => {
+      setChatsMenuOpen(false);
+      setChatsMenuPos(null);
+    };
+    const onPointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (chatsMenuRef.current?.contains(target)) return;
+      if (chatsMenuButtonRef.current?.contains(target)) return;
+      close();
+    };
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !isImeComposing(event)) close();
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [chatsMenuOpen, chatsMenuPos]);
 
   useEffect(() => {
     onRunningSessionIdsChange?.(runningSessionIds);
@@ -587,14 +814,16 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
   const restoredRef = useRef(false);
 
-  const projectSelection = useCallback((root: string, key: string): ProjectSelection => ({
+  const projectSelection = useCallback((root: string, key: string, kind: SessionWorkspaceKind = "project"): ProjectSelection => ({
     root,
     key,
+    kind,
   }), []);
 
   /** Resolve both display root and stable identity from server-provided data. */
   const projectFor = useCallback((cwd: string | null): ProjectSelection | null => {
     if (!cwd) return null;
+    if (isChatCwd(cwd)) return projectSelection(cwd, cwd, "chat");
     // Custom-path identity validation lives in ProjectPicker (the extraction
     // boundary this file's sentinel test guards); identity here resolves from
     // server-provided worktree and session data only.
@@ -609,10 +838,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const match = allSessions.find((session) => (
       session.cwd === cwd || (session.projectRoot ?? session.cwd) === cwd
     ));
+    if (match?.workspaceKind === "chat") {
+      return projectSelection(match.cwd, match.cwd, "chat");
+    }
     return match
       ? projectSelection(match.projectRoot ?? match.cwd, workspaceKeyOf(match))
       : projectSelection(cwd, cwd);
-  }, [worktreeState, allSessions, projectSelection]);
+  }, [worktreeState, allSessions, isChatCwd, projectSelection]);
 
   // Selecting a directory is also the explicit "add project" action. If the
   // project was previously removed from the sidebar, make it visible again
@@ -633,12 +865,14 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   useEffect(() => {
     const project = projectFor(selectedCwd);
     const previous = lastNotifiedProjectRef.current;
-    if (previous?.cwd === selectedCwd && previous.key === (project?.key ?? null)) return;
-    lastNotifiedProjectRef.current = { cwd: selectedCwd, key: project?.key ?? null };
+    const kind = project?.kind ?? "project";
+    if (previous?.cwd === selectedCwd && previous.key === (project?.key ?? null) && previous.kind === kind) return;
+    lastNotifiedProjectRef.current = { cwd: selectedCwd, key: project?.key ?? null, kind };
     onCwdChange?.(
       selectedCwd,
       project?.root ?? null,
       project?.key ?? null,
+      project?.kind,
     );
   }, [selectedCwd, onCwdChange, projectFor]);
 
@@ -656,26 +890,16 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
 
   // Load worktrees for the current effective cwd
   const [wtRefreshKey, setWtRefreshKey] = useState(0);
-  // Cwds already resolved once: background refetches (e.g. refreshKey bump on
-  // agent end) stay silent for them, so the transient "checking worktrees"
-  // header row doesn't flash and shove the session list down and back up.
-  const checkedWorktreeCwdsRef = useRef<Set<string>>(new Set());
   useLayoutEffect(() => {
-    if (!selectedCwd) {
+    if (!selectedCwd || selectedCwdIsChat) {
       setWorktreeState(null);
-      setWorktreeLoadingCwd(null);
       return;
     }
     let cancelled = false;
-    if (!checkedWorktreeCwdsRef.current.has(selectedCwd)) {
-      setWorktreeLoadingCwd(selectedCwd);
-    }
     fetch(`/api/worktrees?cwd=${encodeURIComponent(selectedCwd)}`)
       .then((r) => r.json())
       .then((d: { projectRoot?: string; projectKey?: string; isGit?: boolean; isTopLevel?: boolean; currentWorktreePath?: string | null; worktrees?: WorktreeEntry[]; error?: string }) => {
         if (cancelled) return;
-        checkedWorktreeCwdsRef.current.add(selectedCwd);
-        setWorktreeLoadingCwd(null);
         if (d.error || !d.projectRoot) {
           setWorktreeState(null);
           return;
@@ -691,13 +915,10 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         });
       })
       .catch(() => {
-        if (!cancelled) {
-          setWorktreeLoadingCwd(null);
-          setWorktreeState(null);
-        }
+        if (!cancelled) setWorktreeState(null);
       });
     return () => { cancelled = true; };
-  }, [selectedCwd, wtRefreshKey, refreshKey, wtPollTick]);
+  }, [selectedCwd, selectedCwdIsChat, wtRefreshKey, refreshKey, wtPollTick]);
 
   // Keep the worktree/branch display honest when branches are switched outside
   // pi (terminal, IDE, another client): poll while the tab is visible and
@@ -722,7 +943,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
   const recentProjects = getRecentProjects(allSessions);
   // Auto-select cwd and restore session from URL on first load
   useEffect(() => {
-    if (allSessions.length === 0 || skipInitialProjectSelection) return;
+    if (loading || skipInitialProjectSelection) return;
 
     if (selectedCwd === null) {
       // If restoring a session, set cwd to match that session
@@ -739,133 +960,104 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       }
       const projects = recentProjects;
       if (projects.length > 0) setSelectedCwd(projects[0]);
+      else if (chatWorkspaceCwd) setSelectedCwd(chatWorkspaceCwd);
     }
-  }, [allSessions, selectedCwd, initialSessionId, skipInitialProjectSelection, onSelectSession, onInitialRestoreDone, recentProjects]);
+  }, [allSessions, chatWorkspaceCwd, loading, selectedCwd, initialSessionId, skipInitialProjectSelection, onSelectSession, onInitialRestoreDone, recentProjects]);
 
-  // Branch list for the switcher section (and the new-worktree datalist).
-  // Loaded while the dropdown is open and on every poll tick, so branches
-  // created or fetched elsewhere show up on the next open.
-  const wtProjectRoot = worktreeState?.projectRoot ?? null;
-  useEffect(() => {
-    if (!wtDropdownOpen || !wtProjectRoot) return;
-    let cancelled = false;
-    fetch(`/api/worktrees?cwd=${encodeURIComponent(wtProjectRoot)}&branches=1`)
-      .then((r) => r.json())
-      .then((d: { branches?: string[]; remoteBranches?: string[] }) => {
-        if (cancelled) return;
-        setWtBranchesLoaded(true);
-        setWtBranches(Array.isArray(d.branches) ? d.branches : []);
-        setWtRemoteBranches(Array.isArray(d.remoteBranches) ? d.remoteBranches : []);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setWtBranches([]);
-          setWtRemoteBranches([]);
-        }
-      });
-    return () => { cancelled = true; };
-  }, [wtDropdownOpen, wtProjectRoot, wtPollTick]);
+  // The worktree behind the active project's branch subtitle; falls back to
+  // the main worktree while worktreeState catches up with a new selection.
+  const currentWt = currentWorktree ?? null;
 
-  // The worktree matching selectedCwd, falling back to the main worktree when
-  // worktreeState hasn't caught up to selectedCwd yet (e.g. right after
-  // creating/switching to a worktree, before the next refresh lands) — same
-  // fallback the switcher dropdown itself uses to stay correct through that
-  // race, instead of comparing raw paths that may not (yet) match anything.
-  const currentWt = worktreeState?.worktrees.find((w) => w.path === selectedCwd)
-    ?? worktreeState?.worktrees.find((w) => w.isMain)
-    ?? null;
+  const closeProjectMenu = useCallback(() => {
+    setProjectMenu(null);
+    setProjectMenuPos(null);
+    setProjectBranchMenu(null);
+    setProjectMenuView("actions");
+  }, []);
 
-  const handleSwitchBranch = useCallback(async (branch: string) => {
-    if (!worktreeState || wtBusy || wtSwitchingBranch) return;
-    // git refuses to check out a branch that another worktree already holds —
-    // jump to that worktree instead; that is what the user means anyway.
-    const holder = worktreeState.worktrees.find((w) => w.branch === branch && w.path !== currentWt?.path);
-    if (holder) {
-      setSelectedCwd(holder.path);
-      setWtDropdownOpen(false);
-      setWtError(null);
-      setWtFilter("");
-      return;
-    }
-    if (currentWt?.branch === branch) return;
-    const cwd = currentWt?.path ?? selectedCwd ?? worktreeState.projectRoot;
-    setWtSwitchingBranch(branch);
-    setWtError(null);
-    try {
-      const res = await fetch("/api/worktrees", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd, branch }),
-      });
-      const data = await res.json().catch(() => ({})) as { branch?: string; error?: string };
-      if (!res.ok || data.error || !data.branch) {
-        setWtError(data.error ?? `HTTP ${res.status}`);
-        return;
-      }
-      setWtDropdownOpen(false);
-      setWtRefreshKey((k) => k + 1);
-      // The checkout's contents just changed wholesale — refresh the
-      // session rows (worktreeBranch subtitles) alongside the header.
-      void loadSessions(false);
-    } catch (e) {
-      setWtError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setWtSwitchingBranch(null);
-    }
-  }, [worktreeState, wtBusy, wtSwitchingBranch, currentWt, selectedCwd, loadSessions]);
-
-  const openProjectBranchMenu = useCallback(async (projectRoot: string) => {
-    setProjectBranchMenu({ root: projectRoot, branches: [], remoteBranches: [], worktrees: [], loaded: false });
+  /** Loads the branch and worktree lists behind the DOM menu's branch / worktree pages. */
+  const loadProjectMenuData = useCallback(async (projectRoot: string) => {
+    setProjectBranchMenu({ root: projectRoot, isGit: false, branches: [], remoteBranches: [], worktrees: [], loaded: false });
     setProjectBranchLoading(true);
     try {
-      const res = await fetch(`/api/worktrees?cwd=${encodeURIComponent(projectRoot)}&branches=1`);
-      const data = await res.json().catch(() => ({})) as {
-        projectRoot?: string;
-        branches?: string[];
-        remoteBranches?: string[];
-        worktrees?: WorktreeEntry[];
-      };
-      if (!res.ok || data.projectRoot !== projectRoot) throw new Error(`HTTP ${res.status}`);
-      setProjectBranchMenu((prev) => prev?.root === projectRoot ? {
-        root: projectRoot,
-        branches: Array.isArray(data.branches) ? data.branches : [],
-        remoteBranches: Array.isArray(data.remoteBranches) ? data.remoteBranches : [],
-        worktrees: Array.isArray(data.worktrees) ? data.worktrees : [],
-        loaded: true,
-      } : prev);
-    } catch {
-      setProjectBranchMenu((prev) => prev?.root === projectRoot ? {
-        root: projectRoot, branches: [], remoteBranches: [], worktrees: [], loaded: true,
-      } : prev);
+      const data = await fetchProjectBranchMenu(projectRoot);
+      setProjectBranchMenu((prev) => prev?.root === projectRoot ? data : prev);
     } finally {
       setProjectBranchLoading(false);
     }
   }, []);
 
-  const handleSwitchProjectBranch = useCallback(async (projectRoot: string, branch: string, loaded?: ProjectBranchMenuState) => {
+  const worktreeActions = useProjectWorktreeActions({
+    onBranchesFetched: (projectRoot, lists) => {
+      setProjectBranchMenu((prev) => prev?.root === projectRoot ? { ...prev, ...lists } : prev);
+    },
+    onWorktreeCreated: (projectRoot, path, branch) => {
+      closeProjectMenu();
+      // Register the new worktree right away so projectFor() resolves it to
+      // the main repo before the refetch lands (keeps AppShell from treating
+      // the new cwd as a different project).
+      setWorktreeState((prev) => prev?.projectRoot === projectRoot ? {
+        ...prev,
+        forCwd: path,
+        currentWorktreePath: path,
+        worktrees: [...prev.worktrees, { path, branch, isMain: false }],
+      } : prev);
+      setSelectedCwd(path);
+      setWtRefreshKey((k) => k + 1);
+    },
+    onWorktreeRemoved: (projectRoot, path) => {
+      if (currentWorktreePath === path || selectedCwd === path) setSelectedCwd(projectRoot);
+      setWtRefreshKey((k) => k + 1);
+      void loadProjectMenuData(projectRoot);
+      void loadSessions(false);
+    },
+  });
+  const { reset: resetWorktreeActions } = worktreeActions;
+
+  const showProjectMenuView = useCallback((projectRoot: string, view: ProjectMenuView) => {
+    resetWorktreeActions();
+    setProjectMenuView(view);
+    if (view !== "actions" && projectBranchMenu?.root !== projectRoot) void loadProjectMenuData(projectRoot);
+    if (view === "actions") setProjectBranchMenu(null);
+  }, [loadProjectMenuData, projectBranchMenu, resetWorktreeActions]);
+
+  /**
+   * Opens the DOM menu at a native popup's point, for the steps a native menu
+   * cannot do: typing a branch name, confirming a removal, showing an error.
+   */
+  const openDomProjectMenu = useCallback((projectRoot: string, at: NativeMenuPoint, view: ProjectMenuView, loaded?: ProjectBranchMenuState) => {
+    const menuWidth = 240;
+    setProjectMenu({ root: projectRoot });
+    setProjectMenuPos({
+      top: Math.max(8, Math.min(at.y, window.innerHeight - 160)),
+      left: Math.max(8, Math.min(at.x, window.innerWidth - menuWidth - 8)),
+    });
+    setProjectMenuView(view);
+    setProjectRevealError(null);
+    if (loaded?.root === projectRoot) setProjectBranchMenu(loaded);
+    else void loadProjectMenuData(projectRoot);
+  }, [loadProjectMenuData]);
+
+  const handleSwitchProjectBranch = useCallback(async (projectRoot: string, branch: string, loaded?: ProjectBranchMenuState, at?: NativeMenuPoint) => {
     if (wtSwitchingBranch) return;
     const branchData = loaded ?? (projectBranchMenu?.root === projectRoot ? projectBranchMenu : null);
-    const checkout = branchData?.worktrees.find((w) => w.path === selectedCwd)
-      ?? branchData?.worktrees.find((w) => w.isMain)
-      ?? null;
+    const checkout = branchData ? currentCheckout(branchData.worktrees, selectedCwd) ?? null : null;
     const holder = branchData?.worktrees.find((w) => w.branch === branch && w.path !== checkout?.path);
     if (holder) {
       setSelectedCwd(holder.path);
-      setProjectMenu(null);
-      setProjectMenuPos(null);
-      setProjectBranchMenu(null);
+      closeProjectMenu();
       return;
     }
     if (checkout?.branch === branch) {
       setSelectedCwd(checkout.path);
-      setProjectMenu(null);
-      setProjectMenuPos(null);
-      setProjectBranchMenu(null);
+      closeProjectMenu();
       return;
     }
 
     const cwd = checkout?.path ?? projectRoot;
     setWtSwitchingBranch(branch);
+    worktreeActions.setError(null);
+    let failure: string | null = null;
     try {
       const res = await fetch("/api/worktrees", {
         method: "PUT",
@@ -874,128 +1066,24 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       });
       const data = await res.json().catch(() => ({})) as { branch?: string; error?: string };
       if (!res.ok || data.error || !data.branch) {
-        setWtError(data.error ?? `HTTP ${res.status}`);
-        return;
+        failure = data.error ?? `HTTP ${res.status}`;
+      } else {
+        setSelectedCwd(cwd);
+        closeProjectMenu();
+        setWtRefreshKey((k) => k + 1);
+        void loadSessions(false);
       }
-      setSelectedCwd(cwd);
-      setProjectMenu(null);
-      setProjectMenuPos(null);
-      setProjectBranchMenu(null);
-      setWtRefreshKey((k) => k + 1);
-      void loadSessions(false);
     } catch (e) {
-      setWtError(e instanceof Error ? e.message : String(e));
+      failure = e instanceof Error ? e.message : String(e);
     } finally {
       setWtSwitchingBranch(null);
     }
-  }, [projectBranchMenu, selectedCwd, wtSwitchingBranch, loadSessions]);
-
-  const handleFetchBranches = useCallback(async () => {
-    if (!worktreeState || wtFetching) return;
-    setWtFetching(true);
-    setWtError(null);
-    try {
-      const res = await fetch("/api/worktrees/fetch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd: worktreeState.projectRoot }),
-      });
-      const data = await res.json().catch(() => ({})) as { branches?: string[]; remoteBranches?: string[]; error?: string };
-      if (!res.ok || data.error) {
-        setWtError(data.error ?? `HTTP ${res.status}`);
-        return;
-      }
-      setWtBranches(Array.isArray(data.branches) ? data.branches : []);
-      setWtRemoteBranches(Array.isArray(data.remoteBranches) ? data.remoteBranches : []);
-    } catch (e) {
-      setWtError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setWtFetching(false);
+    if (failure) {
+      // A native popup has already closed, so show git's answer in the DOM menu.
+      if (at) openDomProjectMenu(projectRoot, at, "branches", branchData ?? undefined);
+      worktreeActions.setError(failure);
     }
-  }, [worktreeState, wtFetching]);
-
-  const handleCreateWorktree = useCallback(async () => {
-    const branch = wtNewBranch.trim();
-    if (!branch || wtBusy || !worktreeState) return;
-    setWtBusy(true);
-    setWtError(null);
-    try {
-      const res = await fetch("/api/worktrees", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd: worktreeState.projectRoot, branch }),
-      });
-      const data = await res.json().catch(() => ({})) as { path?: string; error?: string };
-      if (!res.ok || data.error || !data.path) {
-        setWtError(data.error ?? `HTTP ${res.status}`);
-        return;
-      }
-      setWtNewOpen(false);
-      setWtNewBranch("");
-      setWtDropdownOpen(false);
-      // Optimistically register the new worktree so projectFor() resolves
-      // it to the main repo before the refetch lands (keeps AppShell from
-      // treating the new cwd as a different project).
-      setWorktreeState((prev) => prev ? {
-        ...prev,
-        forCwd: data.path!,
-        currentWorktreePath: data.path!,
-        worktrees: [...prev.worktrees, { path: data.path!, branch, isMain: false }],
-      } : prev);
-      setSelectedCwd(data.path);
-      setWtRefreshKey((k) => k + 1);
-    } catch (e) {
-      setWtError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setWtBusy(false);
-    }
-  }, [wtNewBranch, wtBusy, worktreeState]);
-
-  const handleRemoveWorktree = useCallback(async (path: string, force: boolean) => {
-    if (!worktreeState || wtBusy) return;
-    setWtBusy(true);
-    setWtError(null);
-    try {
-      const res = await fetch("/api/worktrees", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd: worktreeState.projectRoot, path, force }),
-      });
-      const data = await res.json().catch(() => ({})) as { error?: string; dirty?: boolean };
-      if (!res.ok) {
-        if (data.dirty && !force) {
-          // Dirty worktree — escalate the confirm row to a force removal
-          setWtConfirmRemove({ path, force: true });
-          return;
-        }
-        setWtError(data.error ?? `HTTP ${res.status}`);
-        return;
-      }
-      setWtConfirmRemove(null);
-      if (currentWorktreePath === path) setSelectedCwd(worktreeState.projectRoot);
-      setWtRefreshKey((k) => k + 1);
-    } catch (e) {
-      setWtError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setWtBusy(false);
-    }
-  }, [worktreeState, wtBusy, currentWorktreePath]);
-
-  // Close the worktree dropdown on outside click (the project picker owns its own)
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (wtDropdownRef.current && !wtDropdownRef.current.contains(e.target as Node)) {
-        setWtDropdownOpen(false);
-        setWtNewOpen(false);
-        setWtNewBranch("");
-        setWtError(null);
-        setWtConfirmRemove(null);
-        setWtFilter("");
-      }
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, []);
+  }, [closeProjectMenu, loadSessions, openDomProjectMenu, projectBranchMenu, selectedCwd, worktreeActions, wtSwitchingBranch]);
 
   // Clicking a session moves the effective cwd to that session's worktree.
   // Done on the click path (not via the selectedCwd prop sync) so it also
@@ -1007,18 +1095,52 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     onSelectSession(s, false, entryId, blockIndex);
   }, [onSelectSession]);
 
-  const handleNewSession = useCallback((cwdOverride?: string) => {
-    const cwd = cwdOverride ?? selectedCwd;
+  const continueChatInProject = useCallback(async (chat: SessionInfo, cwd: string) => {
+    setContinueChat(null);
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(chat.id)}/continue-in-project`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd }),
+      });
+      const data = await res.json().catch(() => ({})) as { sessionId?: string; path?: string | null; cwd?: string; chatFolder?: string | null; error?: string };
+      if (!res.ok || !data.sessionId) throw new Error(data.error ?? `HTTP ${res.status}`);
+      // The project session starts without the files the chat made; say where they are.
+      if (data.chatFolder) appNotify.info({ message: t("sidebar.continueInProjectFolderNote", { path: data.chatFolder }) });
+      const now = new Date().toISOString();
+      activateProject(cwd);
+      handleSelectSessionFromList({
+        ...chat,
+        id: data.sessionId,
+        path: data.path ?? "",
+        cwd: data.cwd ?? cwd,
+        workspaceKind: "project",
+        projectRoot: projectRootFor(cwd) ?? cwd,
+        created: now,
+        modified: now,
+        parentSessionId: chat.id,
+      });
+      void loadSessions(false, true);
+    } catch (e) {
+      appNotify.error({ message: t("sidebar.continueInProjectFailed", { error: e instanceof Error ? e.message : String(e) }) });
+    }
+  }, [activateProject, handleSelectSessionFromList, loadSessions, projectRootFor, t]);
+
+  const handleNewSession = useCallback((cwdOverride?: string, workspaceKindOverride?: SessionWorkspaceKind) => {
+    const cwd = cwdOverride ?? selectedCwd ?? chatWorkspaceCwd;
     if (!cwd) return;
+    const workspaceKind = workspaceKindOverride ?? (isChatCwd(cwd) ? "chat" : "project");
     // Creating a session is also the activation gesture for an archived
     // project. This keeps the archive list useful without a second step.
-    const projectRoot = projectRootFor(cwd) ?? cwd;
-    if (archivedProjectRoots.has(projectRoot)) {
-      setArchivedProjectRoots((prev) => {
-        const next = new Set(prev);
-        next.delete(projectRoot);
-        return next;
-      });
+    if (workspaceKind === "project") {
+      const projectRoot = projectRootFor(cwd) ?? cwd;
+      if (archivedProjectRoots.has(projectRoot)) {
+        setArchivedProjectRoots((prev) => {
+          const next = new Set(prev);
+          next.delete(projectRoot);
+          return next;
+        });
+      }
     }
     if (cwd !== selectedCwd) setSelectedCwd(cwd);
     // Generate a temporary UUID client-side — no backend call needed.
@@ -1026,8 +1148,8 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const tempId = typeof crypto.randomUUID === "function"
       ? crypto.randomUUID()
       : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}-${Math.random().toString(36).slice(2)}`;
-    onNewSession?.(tempId, cwd);
-  }, [selectedCwd, archivedProjectRoots, onNewSession, projectRootFor]);
+    onNewSession?.(tempId, cwd, workspaceKind);
+  }, [selectedCwd, chatWorkspaceCwd, archivedProjectRoots, onNewSession, projectRootFor, isChatCwd]);
 
   const handleAddProject = useCallback(async () => {
     if (!isTauriDesktop()) {
@@ -1049,55 +1171,50 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       next.add(projectRoot);
       return next;
     });
-    setProjectMenu(null);
-    setProjectMenuPos(null);
-  }, []);
+    closeProjectMenu();
+  }, [closeProjectMenu]);
 
   // Desktop shell: native popup versions of the project menu and its branch
-  // list. `projectMenu` stays set while one is up (it keeps the row's "…"
-  // visible) but `projectMenuPos` stays null, so the DOM menu never renders.
-  const showNativeBranchMenu = useCallback(async (projectRoot: string, at: NativeMenuPoint) => {
-    let data: ProjectBranchMenuState;
-    try {
-      const res = await fetch(`/api/worktrees?cwd=${encodeURIComponent(projectRoot)}&branches=1`);
-      const body = await res.json().catch(() => ({})) as {
-        projectRoot?: string;
-        branches?: string[];
-        remoteBranches?: string[];
-        worktrees?: WorktreeEntry[];
-      };
-      if (!res.ok || body.projectRoot !== projectRoot) throw new Error(`HTTP ${res.status}`);
-      data = {
-        root: projectRoot,
-        branches: Array.isArray(body.branches) ? body.branches : [],
-        remoteBranches: Array.isArray(body.remoteBranches) ? body.remoteBranches : [],
-        worktrees: Array.isArray(body.worktrees) ? body.worktrees : [],
-        loaded: true,
-      };
-    } catch {
-      data = { root: projectRoot, branches: [], remoteBranches: [], worktrees: [], loaded: true };
-    }
-    const checkout = data.worktrees.find((w) => w.path === selectedCwd) ?? data.worktrees.find((w) => w.isMain);
-    const names = [
-      ...data.branches.map((name) => ({ name, remote: false })),
-      ...data.remoteBranches.map((name) => ({ name, remote: true })),
-    ];
-    await showNativeMenu(
-      names.length === 0
-        ? [{ label: t("sidebar.noOtherBranches"), disabled: true }]
-        : names.map(({ name, remote }) => {
-            const holder = data.worktrees.find((w) => w.branch === name && w.path !== checkout?.path);
-            const tag = holder ? "worktree" : remote ? t("sidebar.remoteBranchTag") : "";
-            return {
-              label: tag ? `${name}  ·  ${tag}` : name,
-              checked: checkout?.branch === name,
-              disabled: wtSwitchingBranch !== null,
-              onSelect: () => void handleSwitchProjectBranch(projectRoot, name, data),
-            };
-          }),
+  // and worktree lists. `projectMenu` stays set while one is up (it keeps the
+  // row's "…" visible) but `projectMenuPos` stays null, so the DOM menu never
+  // renders — until a step needs it (openDomProjectMenu).
+  const { setError: setWorktreeError, requestRemove: requestWorktreeRemoval } = worktreeActions;
+  const showNativeBranchMenu = useCallback(function showBranches(projectRoot: string, at: NativeMenuPoint): Promise<void> {
+    return showNativeProjectBranchMenu({
+      projectRoot,
       at,
-    );
-  }, [handleSwitchProjectBranch, selectedCwd, t, wtSwitchingBranch]);
+      selectedCwd,
+      switchingBranch: wtSwitchingBranch,
+      t,
+      onSwitch: (root, branch, loaded) => void handleSwitchProjectBranch(root, branch, loaded, at),
+      onFetch: (root) => void (async () => {
+        try {
+          await fetchRemoteBranches(root);
+          await showBranches(root, at);
+        } catch (e) {
+          openDomProjectMenu(root, at, "branches");
+          setWorktreeError(e instanceof Error ? e.message : String(e));
+        }
+      })(),
+    });
+  }, [handleSwitchProjectBranch, openDomProjectMenu, selectedCwd, setWorktreeError, t, wtSwitchingBranch]);
+
+  const showNativeWorktreeMenu = useCallback((projectRoot: string, at: NativeMenuPoint) => showNativeProjectWorktreeMenu({
+    projectRoot,
+    at,
+    selectedCwd,
+    t,
+    onSelect: (path) => setSelectedCwd(path),
+    onNew: (root, point, loaded) => {
+      resetWorktreeActions();
+      openDomProjectMenu(root, point, "new-worktree", loaded);
+    },
+    onRemove: (root, path, point, loaded) => {
+      resetWorktreeActions();
+      openDomProjectMenu(root, point, "worktrees", loaded);
+      requestWorktreeRemoval(path);
+    },
+  }), [openDomProjectMenu, requestWorktreeRemoval, resetWorktreeActions, selectedCwd, t]);
 
   const showNativeProjectMenu = useCallback(async (projectRoot: string, at: NativeMenuPoint): Promise<boolean> => {
     setProjectMenu({ root: projectRoot });
@@ -1106,6 +1223,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     setProjectRevealError(null);
     const shown = await showNativeMenu([
       { label: `${t("sidebar.switchBranch")}…`, onSelect: () => void showNativeBranchMenu(projectRoot, at) },
+      { label: t("sidebar.worktrees"), onSelect: () => void showNativeWorktreeMenu(projectRoot, at) },
       ...(onOpenTerminal
         ? [{ label: t("sidebar.openTerminalHere"), onSelect: () => onOpenTerminal(projectRoot) }]
         : []),
@@ -1115,18 +1233,17 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     ], at);
     setProjectMenu((current) => (current?.root === projectRoot ? null : current));
     return shown;
-  }, [archiveProject, onOpenTerminal, revealProjectInFileManager, revealProjectLabel, showNativeBranchMenu, t]);
+  }, [archiveProject, onOpenTerminal, revealProjectInFileManager, revealProjectLabel, showNativeBranchMenu, showNativeWorktreeMenu, t]);
 
   const openProjectMenu = useCallback((e: React.MouseEvent<HTMLButtonElement>, projectRoot: string) => {
     e.stopPropagation();
+    resetWorktreeActions();
     if (canUseNativeMenu()) {
       void showNativeProjectMenu(projectRoot, menuPointBelow(e.currentTarget));
       return;
     }
     if (projectMenu?.root === projectRoot) {
-      setProjectMenu(null);
-      setProjectMenuPos(null);
-      setProjectBranchMenu(null);
+      closeProjectMenu();
       return;
     }
     const rect = e.currentTarget.getBoundingClientRect();
@@ -1139,8 +1256,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     setProjectMenu({ root: projectRoot });
     setProjectMenuPos({ top, left });
     setProjectBranchMenu(null);
+    setProjectMenuView("actions");
     setProjectRevealError(null);
-  }, [projectMenu, showNativeProjectMenu]);
+  }, [closeProjectMenu, projectMenu, resetWorktreeActions, showNativeProjectMenu]);
 
   // Phase A: project tree — groups sessions by project root. Sorting is
   const trimmedSessionQuery = sessionQuery.trim().toLowerCase();
@@ -1152,49 +1270,100 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         (session.name ?? "").toLowerCase().includes(trimmedSessionQuery)
         || session.firstMessage.toLowerCase().includes(trimmedSessionQuery))
     : treeSessions;
-  const sessionFamilies = listSessionFamilies(filteredSessions);
-  const allProjects = groupByProject(filteredSessions, { runningIds: runningSessionIds, unreadIds: unreadSessionIds });
+  const chatSessions = filteredSessions
+    .filter((session) => session.workspaceKind === "chat" || isChatCwd(session.cwd))
+    .sort((a, b) => b.modified.localeCompare(a.modified));
+  const projectSessions = filteredSessions.filter(
+    (session) => session.workspaceKind !== "chat" && !isChatCwd(session.cwd),
+  );
+  const allChatFamilies = listSessionFamilies(chatSessions);
+  // Pinned first, then by recency. Archived chats leave the list unless a search is looking for them.
+  const orderedChatFamilies = orderChatFamilies(allChatFamilies, pinnedChats);
+  const chatFamilies = trimmedSessionQuery
+    ? orderedChatFamilies
+    : orderedChatFamilies.filter((family) => !archivedChats.has(family.root.id));
+  const archivedChatFamilies = trimmedSessionQuery
+    ? []
+    : orderedChatFamilies.filter((family) => archivedChats.has(family.root.id));
+  const sessionFamilies = listSessionFamilies(projectSessions);
+  const allProjects = groupByProject(projectSessions, { runningIds: runningSessionIds, unreadIds: unreadSessionIds });
   const activeProjects = allProjects.filter((group) => !archivedProjectRoots.has(group.projectRoot));
+  const activeProjectRoots = activeProjects.map((group) => group.projectRoot);
+  const projectDisplayNames = getProjectDisplayNames(activeProjectRoots);
+  const canCollapseAllProjects = activeProjects.some((group) => !collapsedProjects.has(group.projectRoot));
+  const canExpandAllProjects = activeProjects.some((group) => collapsedProjects.has(group.projectRoot));
+  const timelineFamilies = projectViewMode === "timeline"
+    ? sessionFamilies.filter((family) => (
+        !archivedProjectRoots.has(family.root.projectRoot ?? family.root.cwd)
+      )).sort((a, b) => b.root.modified.localeCompare(a.root.modified))
+    : [];
+  const timelineRootNodes = new Map<string, SessionTreeNode>();
+  for (const family of timelineFamilies) {
+    const [rootNode] = buildSessionTree([family.root, ...family.subagents]);
+    if (rootNode) timelineRootNodes.set(family.root.id, rootNode);
+  }
   useEffect(() => {
     const projectRoots = activeProjects.map((group) => group.projectRoot);
     onProjectsChange?.(projectRoots);
   }, [activeProjects, onProjectsChange]);
   // Sessions of every worktree in the selected project are shown together
   const selectedProjectObject = projectFor(selectedCwd);
-  const showWorktreeSwitcher = Boolean(
-    worktreeState?.isGit
-    && worktreeState.isTopLevel
-    && selectedCwd
-    && selectedProjectObject?.key === worktreeState.projectKey
-  );
-  // Only show a guide row when worktrees are actually reachable (a git repo,
-  // just not checked out at its top level) — a non-git directory has no
-  // worktree feature to point at, so stay silent instead of showing an inert
-  // "not available" placeholder.
-  const worktreeGuide = selectedCwd
-    && worktreeState
-    && selectedProjectObject?.key === worktreeState.projectKey
-    && !showWorktreeSwitcher
-    && worktreeState.isGit
-    ? {
-        label: t("sidebar.openRepoRoot"),
-        title: t("sidebar.openRepoRootTitle"),
-        onClick: () => setSelectedCwd(worktreeState.projectRoot),
-      }
+  const selectedProjectRoot = selectedProjectObject?.kind === "project"
+    ? selectedProjectObject.root
     : null;
-  const worktreeLoading = Boolean(selectedCwd && worktreeLoadingCwd === selectedCwd);
-  const inactiveWorktreeSelector = worktreeGuide
-    ?? (worktreeLoading && !showWorktreeSwitcher
-      ? {
-           label: t("sidebar.worktrees"),
-           title: t("sidebar.checkingWorktrees"),
-           onClick: undefined,
-        }
-      : null);
-  // The selected project and its branch are represented by the project tree
-  // below. Keep the old header rows mounted only as an implementation
-  // fallback, but do not show the duplicated directory/worktree summary.
-  const showLegacyHeaderProjectRows = false;
+  // A search always lists every match, folded or not.
+  const chatsFolded = !trimmedSessionQuery && chatsCollapsed;
+  let visibleChatFamilies = trimmedSessionQuery
+    ? chatFamilies
+    : chatFamilies.slice(0, MAX_VISIBLE_CHAT_SESSIONS * (chatSessionPages + 1));
+  if (!trimmedSessionQuery && selectedSessionId) {
+    const selectedFamily = chatFamilies.find((family) => (
+      family.root.id === selectedSessionId
+      || family.subagents.some((session) => session.id === selectedSessionId)
+    ));
+    if (selectedFamily && !visibleChatFamilies.includes(selectedFamily)) {
+      visibleChatFamilies = [...visibleChatFamilies.slice(0, -1), selectedFamily];
+    }
+  }
+  const hiddenChatFamilyCount = chatFamilies.length - visibleChatFamilies.length;
+  const chatRunningCount = chatFamilies.filter((family) => (
+    [family.root, ...family.subagents].some((session) => runningSessionIds.has(session.id))
+  )).length;
+  const chatUnreadCount = chatFamilies.filter((family) => (
+    [family.root, ...family.subagents].some((session) => unreadSessionIds.has(session.id))
+  )).length;
+  const setChatsFolded = (folded: boolean) => {
+    setChatsCollapsed(folded);
+    if (folded) setChatSessionPages(0);
+  };
+
+  const renderChatFamily = (family: (typeof chatFamilies)[number]) => {
+    const [node] = buildSessionTree([family.root, ...family.subagents]);
+    if (!node) return null;
+    const id = family.root.id;
+    return (
+      <SessionFamilyItem
+        node={node}
+        familySessions={[family.root, ...family.subagents]}
+        selectedSessionId={selectedSessionId}
+        runningSessionIds={runningSessionIds}
+        unreadSessionIds={unreadSessionIds}
+        onSelectSession={handleSelectSessionFromList}
+        onRenamed={loadSessions}
+        onContinueInProject={setContinueChat}
+        chatActions={{
+          pinned: pinnedChats.has(id),
+          archived: archivedChats.has(id),
+          onTogglePin: () => setPinnedChats((current) => toggleId(current, id)),
+          onToggleArchive: () => setArchivedChats((current) => toggleId(current, id)),
+        }}
+        onSessionDeleted={(deletedId) => {
+          onSessionDeleted?.(deletedId);
+          loadSessions();
+        }}
+      />
+    );
+  };
 
   const renderProjectGroup = (group: ReturnType<typeof groupByProject>[number]) => {
     const isCollapsed = !trimmedSessionQuery && collapsedProjects.has(group.projectRoot);
@@ -1202,19 +1371,20 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
     const runningCount = group.runningIds.size;
     const unreadCount = group.unreadIds.size;
     const groupTree = buildSessionTree(group.sessions);
-    const showSessionOverflow = groupTree.length > MAX_VISIBLE_PROJECT_SESSIONS;
-    const isSessionOverflowExpanded = Boolean(trimmedSessionQuery) || expandedProjectSessions.has(group.projectRoot);
-    let visibleGroupTree = isSessionOverflowExpanded
+    const extraPages = projectSessionPages[group.projectRoot] ?? 0;
+    const visibleSessionLimit = MAX_VISIBLE_PROJECT_SESSIONS * (extraPages + 1);
+    let visibleGroupTree = trimmedSessionQuery
       ? groupTree
-      : groupTree.slice(0, MAX_VISIBLE_PROJECT_SESSIONS);
+      : groupTree.slice(0, visibleSessionLimit);
     // Keep the selected session reachable even when it is older than the
     // collapsed preview window.
-    if (!isSessionOverflowExpanded && selectedSessionId) {
+    if (!trimmedSessionQuery && selectedSessionId) {
       const selectedRoot = groupTree.find((node) => treeContainsSession(node, selectedSessionId));
       if (selectedRoot && !visibleGroupTree.includes(selectedRoot)) {
         visibleGroupTree = [...visibleGroupTree.slice(0, -1), selectedRoot];
       }
     }
+    const hiddenSessionCount = groupTree.length - visibleGroupTree.length;
     const branchSubtitle = isActive && currentWt?.branch
       ? currentWt.branch
       : group.branches.length === 1
@@ -1229,6 +1399,12 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         else next.add(group.projectRoot);
         return next;
       });
+      setProjectSessionPages((prev) => {
+        if (!(group.projectRoot in prev)) return prev;
+        const next = { ...prev };
+        delete next[group.projectRoot];
+        return next;
+      });
       if (!isActive) setSelectedCwd(group.projectRoot);
     };
 
@@ -1241,9 +1417,22 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           <button
             type="button"
             className="sidebar-project-tree-row-main"
+            data-sidebar-tree-row
+            tabIndex={0}
+            role="treeitem"
+            aria-selected={isActive}
             onClick={toggleCollapse}
             aria-expanded={!isCollapsed}
             title={rowTitle}
+            onKeyDown={(e) => handleSidebarTreeKeyDown(e, {
+              activate: toggleCollapse,
+              expand: () => {
+                if (isCollapsed) toggleCollapse();
+              },
+              collapse: () => {
+                if (!isCollapsed) toggleCollapse();
+              },
+            })}
           >
             <span className="sidebar-project-tree-folder" aria-hidden="true">
               {/* Closed folder vs. folder with its flap lifted; the closed one
@@ -1260,7 +1449,9 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 )}
               </svg>
             </span>
-            <span className="sidebar-project-tree-name">{group.displayName}</span>
+            <span className="sidebar-project-tree-name">
+              {projectDisplayNames.get(group.projectRoot) ?? group.displayName}
+            </span>
             {/* A folded project hides its rows, so the count (and any running
                 or unread chips) must stay readable on the header itself. */}
             {isCollapsed && (
@@ -1298,12 +1489,13 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
                 <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
             </button>
-            <button
+              <button
               type="button"
               className="sidebar-project-tree-action sidebar-project-tree-more"
               onClick={(e) => openProjectMenu(e, group.projectRoot)}
               title={t("sidebar.moreActions")}
               aria-label={t("sidebar.moreActions")}
+                aria-haspopup="menu"
               aria-expanded={isMenuOpen}
             >
               <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
@@ -1337,24 +1529,191 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
               />
               );
             })}
-            {showSessionOverflow && (
+            {hiddenSessionCount > 0 && (
               <button
                 type="button"
                 className="sidebar-project-tree-show-more"
-                onClick={() => setExpandedProjectSessions((prev) => {
-                  const next = new Set(prev);
-                  if (next.has(group.projectRoot)) next.delete(group.projectRoot);
-                  else next.add(group.projectRoot);
-                  return next;
-                })}
+                onClick={() => setProjectSessionPages((prev) => ({
+                  ...prev,
+                  [group.projectRoot]: (prev[group.projectRoot] ?? 0) + 1,
+                }))}
               >
-                {isSessionOverflowExpanded ? t("sidebar.showLessSessions") : t("sidebar.showMoreSessions")}
+                {t("sidebar.showMoreSessions", {
+                  count: Math.min(MAX_VISIBLE_PROJECT_SESSIONS, hiddenSessionCount),
+                })}
               </button>
             )}
           </div>
         )}
       </div>
     );
+  };
+
+  const renderTimeline = () => (
+    <div className="sidebar-project-timeline">
+      {timelineFamilies.map((family) => {
+        const node = timelineRootNodes.get(family.root.id);
+        if (!node) return null;
+        const projectRoot = family.root.projectRoot ?? family.root.cwd;
+        const projectName = projectDisplayNames.get(projectRoot)
+          ?? getProjectDisplayName(projectRoot, activeProjectRoots);
+        const familySessions = [family.root, ...family.subagents];
+        return (
+          <SessionFamilyItem
+            key={family.root.id}
+            node={node}
+            familySessions={familySessions}
+            subtitle={projectName}
+            selectedSessionId={selectedSessionId}
+            runningSessionIds={runningSessionIds}
+            unreadSessionIds={unreadSessionIds}
+            onSelectSession={handleSelectSessionFromList}
+            onRenamed={loadSessions}
+            onSessionDeleted={(id) => {
+              onSessionDeleted?.(id);
+              loadSessions();
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+
+  const closeProjectViewMenu = () => {
+    setProjectViewMenuOpen(false);
+    setProjectViewMenuPos(null);
+  };
+
+  const changeProjectViewMode = (mode: ProjectViewMode) => {
+    setProjectViewMode(mode);
+    setPref(APP_PREF_KEYS.projectViewMode, mode);
+    closeProjectViewMenu();
+  };
+
+  const collapseAllProjects = () => {
+    setCollapsedProjects(new Set(activeProjectRoots));
+    setProjectSessionPages({});
+    closeProjectViewMenu();
+  };
+
+  const expandAllProjects = () => {
+    setCollapsedProjects(new Set());
+    closeProjectViewMenu();
+  };
+
+  const closeChatsMenu = () => {
+    setChatsMenuOpen(false);
+    setChatsMenuPos(null);
+  };
+
+  const openChatsDomMenu = (anchor: HTMLElement) => {
+    const rect = anchor.getBoundingClientRect();
+    const width = 216;
+    const estimatedHeight = 96;
+    const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
+    const top = rect.bottom + 4 + estimatedHeight > window.innerHeight - 8
+      ? Math.max(8, rect.top - estimatedHeight - 4)
+      : rect.bottom + 4;
+    setChatsMenuPos({ top, left });
+    setChatsMenuOpen(true);
+  };
+
+  const toggleChatsMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (chatsMenuOpen && chatsMenuPos) {
+      closeChatsMenu();
+      return;
+    }
+    if (chatsMenuOpen) return;
+    closeProjectViewMenu();
+    const anchor = event.currentTarget;
+    if (!canUseNativeMenu()) {
+      openChatsDomMenu(anchor);
+      return;
+    }
+    const entries: NativeMenuEntry[] = [
+      {
+        label: t("sidebar.collapseChats"),
+        disabled: chatsCollapsed,
+        onSelect: () => setChatsFolded(true),
+      },
+      {
+        label: t("sidebar.expandChats"),
+        disabled: !chatsCollapsed,
+        onSelect: () => setChatsFolded(false),
+      },
+    ];
+    setChatsMenuOpen(true);
+    setChatsMenuPos(null);
+    void showNativeMenu(entries, menuPointBelow(anchor, "right")).then((shown) => {
+      if (shown) {
+        setChatsMenuOpen(false);
+        return;
+      }
+      openChatsDomMenu(anchor);
+    });
+  };
+
+  const openProjectViewDomMenu = (anchor: HTMLElement) => {
+    const rect = anchor.getBoundingClientRect();
+    const width = 216;
+    const estimatedHeight = 180;
+    const left = Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8));
+    const top = rect.bottom + 4 + estimatedHeight > window.innerHeight - 8
+      ? Math.max(8, rect.top - estimatedHeight - 4)
+      : rect.bottom + 4;
+    setProjectViewMenuPos({ top, left });
+    setProjectViewMenuOpen(true);
+  };
+
+  const toggleProjectViewMenu = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.stopPropagation();
+    if (projectViewMenuOpen && projectViewMenuPos) {
+      closeProjectViewMenu();
+      return;
+    }
+    if (projectViewMenuOpen) return;
+    closeChatsMenu();
+    setProjectMenu(null);
+    setProjectMenuPos(null);
+    const anchor = event.currentTarget;
+    const controlsDisabled = projectViewMode !== "grouped";
+    if (!canUseNativeMenu()) {
+      openProjectViewDomMenu(anchor);
+      return;
+    }
+    const entries: NativeMenuEntry[] = [
+      {
+        label: t("sidebar.projectViewGrouped"),
+        checked: projectViewMode === "grouped",
+        onSelect: () => changeProjectViewMode("grouped"),
+      },
+      {
+        label: t("sidebar.projectViewTimeline"),
+        checked: projectViewMode === "timeline",
+        onSelect: () => changeProjectViewMode("timeline"),
+      },
+      { kind: "separator" },
+      {
+        label: t("sidebar.collapseAllProjects"),
+        disabled: controlsDisabled || !canCollapseAllProjects,
+        onSelect: collapseAllProjects,
+      },
+      {
+        label: t("sidebar.expandAllProjects"),
+        disabled: controlsDisabled || !canExpandAllProjects,
+        onSelect: expandAllProjects,
+      },
+    ];
+    setProjectViewMenuOpen(true);
+    setProjectViewMenuPos(null);
+    void showNativeMenu(entries, menuPointBelow(anchor, "right")).then((shown) => {
+      if (shown) {
+        setProjectViewMenuOpen(false);
+        return;
+      }
+      openProjectViewDomMenu(anchor);
+    });
   };
 
   return (
@@ -1382,8 +1741,16 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         <button
           className="sidebar-header-row sidebar-new-row"
           onClick={() => handleNewSession()}
-          disabled={!selectedCwd}
-          title={selectedCwd ? `${t("sidebar.newSessionTitle", { path: selectedCwd })} (⌘/Ctrl+N)` : t("sidebar.selectProject")}
+          disabled={!selectedCwd && !chatWorkspaceCwd}
+          title={
+            selectedCwd
+              ? `${selectedCwdIsChat
+                ? t("sidebar.newChatTitle")
+                : t("sidebar.newSessionTitle", { path: selectedCwd })} (⌘/Ctrl+N)`
+              : chatWorkspaceCwd
+                ? t("sidebar.newChatTitle")
+                : t("sidebar.selectProject")
+          }
         >
           <span className="sidebar-new-plus" aria-hidden="true">
             <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -1395,484 +1762,6 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
         </button>
 
         {onOpenScheduled && <ScheduledSidebarRow active={scheduledOpen} onOpen={onOpenScheduled} />}
-
-        {/* Row 2: current folder — flat row */}
-        <div className="sidebar-folder-row" data-no-drag style={{ display: showLegacyHeaderProjectRows ? "flex" : "none", alignItems: "center", gap: 2 }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <ProjectPicker
-              recentProjects={recentProjects}
-              selectedCwd={selectedCwd}
-              selectedProject={selectedProjectObject?.root ?? null}
-              homeDir={homeDir}
-              onSelectCwd={activateProject}
-              variant="block"
-            />
-          </div>
-        </div>
-
-        {/* Worktree switcher — shown only for git projects at a checkout top
-            level (repo subdirs keep their own project identity, so switching
-            from them would jump projects). Rendered whenever the selected cwd
-            belongs to the loaded project (not just when forCwd matches), so
-            switching between worktrees of one project keeps the row mounted
-            instead of flickering while data refetches: all worktrees of a
-            project share the same list anyway. */}
-        {showLegacyHeaderProjectRows && showWorktreeSwitcher && (() => {
-          if (!worktreeState) return null;
-          const showWtFilter = worktreeState.worktrees.length >= 8;
-          const visibleWorktrees = showWtFilter && wtFilter.trim()
-            ? worktreeState.worktrees.filter((w) =>
-                (w.branch ?? displayCwd(w.path, homeDir)).toLowerCase().includes(wtFilter.trim().toLowerCase()))
-            : worktreeState.worktrees;
-          return (
-            <div ref={wtDropdownRef} data-no-drag style={{ position: "relative" }}>
-              <button
-                className="sidebar-header-row"
-                onClick={() => {
-                  setWtDropdownOpen((v) => !v);
-                  // Opening should show the branch state as of now, not as of
-                  // the last poll — the branch may have been switched outside pi.
-                  if (!wtDropdownOpen) setWtRefreshKey((k) => k + 1);
-                }}
-                 title={currentWt ? t("sidebar.switchWorktreeTitle", { path: currentWt.path }) : t("sidebar.switchWorktree")}
-                style={{ background: wtDropdownOpen ? "var(--bg-hover)" : undefined }}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, color: currentWt && !currentWt.isMain ? "var(--accent)" : "var(--text-muted)" }}>
-                  <line x1="6" y1="3" x2="6" y2="15" />
-                  <circle cx="18" cy="6" r="3" />
-                  <circle cx="6" cy="18" r="3" />
-                  <path d="M18 9a9 9 0 0 1-9 9" />
-                </svg>
-                <PathLabel
-                  text={currentWt ? (currentWt.branch ?? displayCwd(currentWt.path, homeDir)) : "…"}
-                  style={{ flex: 1, fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--text)" }}
-                />
-                {currentWorktree?.isMain && (
-                   <span style={{ flexShrink: 0, color: "var(--text-dim)", fontSize: 10 }}>{t("sidebar.main")}</span>
-                )}
-                {worktreeState.worktrees.length > 1 && (
-                  <span style={{ flexShrink: 0, color: "var(--text-dim)", fontSize: 10 }}>
-                    {worktreeState.worktrees.length}
-                  </span>
-                )}
-                <svg width="9" height="9" viewBox="0 0 10 10" fill="none" stroke="var(--text-dim)" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                  <polyline points="2 3.5 5 6.5 8 3.5" />
-                </svg>
-              </button>
-
-              <AnimatedDropdown
-                className="native-popover"
-                open={wtDropdownOpen}
-                style={{
-                  position: "absolute",
-                  top: "calc(100% + 4px)",
-                  left: 0,
-                  right: 0,
-                  zIndex: 100,
-                  background: "var(--bg)",
-                  border: "var(--hairline) solid var(--border)",
-                  borderRadius: 8,
-                  boxShadow: "0 6px 20px rgba(0,0,0,0.10)",
-                  overflow: "hidden",
-                }}
-              >
-                  {showWtFilter && (
-                    <div style={{ padding: "6px 8px", borderBottom: "var(--hairline) solid var(--border)" }}>
-                      <input
-                        value={wtFilter}
-                        onChange={(e) => setWtFilter(e.target.value)}
-                        onKeyDown={(e) => {
-                          if (e.key === "Escape" && !isImeComposing(e)) {
-                            setWtFilter("");
-                            setWtDropdownOpen(false);
-                          }
-                        }}
-                        placeholder={t("sidebar.filterWorktrees")}
-                        autoFocus
-                        style={{
-                          width: "100%",
-                          fontSize: 11,
-                          fontFamily: "var(--font-mono)",
-                          padding: "5px 8px",
-                          border: "var(--hairline) solid var(--border)",
-                          borderRadius: 5,
-                          outline: "none",
-                          background: "var(--bg)",
-                          color: "var(--text)",
-                          boxSizing: "border-box",
-                        }}
-                      />
-                    </div>
-                  )}
-                  <div style={{ maxHeight: "min(40vh, 300px)", overflowY: "auto" }}>
-                    {visibleWorktrees.map((wt) => {
-                      const isCurrent = wt.path === currentWorktreePath || (wt.isMain && !worktreeState.worktrees.some((w) => w.path === selectedCwd));
-                      if (wtConfirmRemove?.path === wt.path) {
-                        const isForce = wtConfirmRemove.force;
-                        return (
-                          <div key={wt.path} style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px", borderBottom: "var(--hairline) solid var(--border)", background: "color-mix(in srgb, var(--danger) 6%, transparent)" }}>
-                            <span style={{ flex: 1, fontSize: 11, color: "var(--text)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {isForce ? t("sidebar.forceRemoveCheckout") : t("sidebar.confirmRemoveWorktree")}
-                            </span>
-                            <button
-                              onClick={() => void handleRemoveWorktree(wt.path, isForce)}
-                              disabled={wtBusy}
-                              style={{ padding: "3px 9px", background: "var(--danger)", border: "none", borderRadius: 5, color: "#fff", fontSize: 11, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}
-                            >
-                              {isForce ? t("sidebar.force") : t("i18n.remove")}
-                            </button>
-                            <button
-                              onClick={() => setWtConfirmRemove(null)}
-                              style={{ padding: "3px 9px", background: "var(--bg-hover)", border: "var(--hairline) solid var(--border)", borderRadius: 5, color: "var(--text-muted)", fontSize: 11, cursor: "pointer", flexShrink: 0 }}
-                            >
-                              {t("sidebar.cancel")}
-                            </button>
-                          </div>
-                        );
-                      }
-                      return (
-                        <div
-                          key={wt.path}
-                          className="wt-row"
-                          style={{ display: "flex", alignItems: "center", borderBottom: "var(--hairline) solid var(--border)" }}
-                        >
-                          <button
-                            onClick={() => {
-                              setSelectedCwd(wt.path);
-                              setWtDropdownOpen(false);
-                              setWtError(null);
-                              setWtFilter("");
-                            }}
-                            title={wt.path}
-                            style={{
-                              flex: 1,
-                              minWidth: 0,
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 7,
-                              padding: "8px 10px",
-                              background: "var(--bg)",
-                              border: "none",
-                              color: isCurrent ? "var(--text)" : "var(--text-muted)",
-                              cursor: "pointer",
-                              textAlign: "left",
-                              fontSize: 11,
-                              fontFamily: "var(--font-mono)",
-                            }}
-                          >
-                            {isCurrent ? (
-                              <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                                <polyline points="1.5 5 4 7.5 8.5 2.5" />
-                              </svg>
-                            ) : (
-                              <span style={{ width: 10, flexShrink: 0 }} />
-                            )}
-                            <PathLabel text={wt.branch ?? displayCwd(wt.path, homeDir)} style={{ flex: 1 }} />
-                            {wt.isMain && <span style={{ flexShrink: 0, color: "var(--text-dim)", fontSize: 10 }}>{t("sidebar.main")}</span>}
-                          </button>
-                          {isTauriDesktop() && (
-                            <button
-                              type="button"
-                              onClick={() => { void revealItemInDirNative(wt.path); }}
-                              title={t("sidebar.revealWorktree")}
-                              style={{
-                                display: "flex", alignItems: "center", justifyContent: "center",
-                                width: 28, height: 28, padding: 0, marginRight: 2,
-                                background: "none", border: "none",
-                                color: "var(--text-dim)", cursor: "pointer",
-                                borderRadius: 5, flexShrink: 0,
-                              }}
-                            >
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z" />
-                              </svg>
-                            </button>
-                          )}
-                          {!wt.isMain && (
-                            <button
-                              onClick={() => { setWtError(null); setWtConfirmRemove({ path: wt.path, force: false }); }}
-                              disabled={wtBusy}
-                               title={t("sidebar.removeWorktreeTitle", { path: wt.path })}
-                              className="worktree-remove-button"
-                            >
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <polyline points="3 6 5 6 21 6" />
-                                <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-                                <path d="M10 11v6M14 11v6" />
-                                <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-                              </svg>
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                    {showWtFilter && visibleWorktrees.length === 0 && wtFilter.trim() && (
-                      <div style={{ padding: "8px 10px", fontSize: 11, color: "var(--text-dim)" }}>{t("sidebar.noMatchingWorktrees")}</div>
-                    )}
-                  </div>
-
-                  {/* Branches of the current checkout — switch in place without
-                      creating a worktree. Hidden while the new-worktree form is
-                      open so the dropdown stays focused on one task. */}
-                  {!wtNewOpen && (() => {
-                    const currentBranch = currentWt?.branch ?? null;
-                    const branchRows = [
-                      ...wtBranches.map((name) => ({ name, remote: false })),
-                      ...wtRemoteBranches.map((name) => ({ name, remote: true })),
-                    ];
-                    return (
-                      <div style={{ borderTop: "var(--hairline) solid var(--border)" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "5px 8px 3px" }}>
-                          <span style={{ flex: 1, fontSize: 10, fontWeight: 600, letterSpacing: "0.03em", color: "var(--text-dim)" }}>{t("sidebar.switchBranch")}</span>
-                          <button
-                            type="button"
-                            onClick={() => { void handleFetchBranches(); }}
-                            disabled={wtFetching}
-                            title={t("sidebar.fetchBranchesTitle")}
-                            style={{
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              width: 22, height: 20, padding: 0,
-                              background: "none", border: "none",
-                              color: wtFetching ? "var(--accent)" : "var(--text-dim)",
-                              cursor: "pointer", borderRadius: 4, flexShrink: 0,
-                            }}
-                          >
-                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={wtFetching ? { animation: "spin 0.9s linear infinite" } : undefined}>
-                              <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-                              <polyline points="21 3 21 9 15 9" />
-                            </svg>
-                          </button>
-                        </div>
-                        <div style={{ maxHeight: "min(28vh, 200px)", overflowY: "auto" }}>
-                          {wtBranchesLoaded && branchRows.length === 0 && (
-                            <div style={{ padding: "3px 10px 8px", fontSize: 11, color: "var(--text-dim)" }}>{t("sidebar.noOtherBranches")}</div>
-                          )}
-                          {branchRows.map(({ name, remote }) => {
-                            const isCurrent = name === currentBranch;
-                            const holder = worktreeState.worktrees.find((w) => w.branch === name && w.path !== selectedCwd);
-                            const switching = wtSwitchingBranch === name;
-                            return (
-                              <button
-                                key={name}
-                                onClick={() => { void handleSwitchBranch(name); }}
-                                disabled={wtSwitchingBranch !== null}
-                                title={
-                                  holder ? t("sidebar.branchInWorktreeTitle", { branch: name })
-                                    : remote ? t("sidebar.branchRemoteTitle")
-                                      : t("sidebar.switchBranchTitle", { branch: name })
-                                }
-                                style={{
-                                  display: "flex", alignItems: "center", gap: 7,
-                                  width: "100%", padding: "6px 10px",
-                                  background: isCurrent ? "var(--bg-hover)" : "none",
-                                  border: "none",
-                                  color: isCurrent ? "var(--text)" : "var(--text-muted)",
-                                  cursor: "pointer", textAlign: "left",
-                                  fontSize: 11, fontFamily: "var(--font-mono)",
-                                  opacity: switching ? 0.55 : 1,
-                                }}
-                              >
-                                {isCurrent ? (
-                                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                                    <polyline points="1.5 5 4 7.5 8.5 2.5" />
-                                  </svg>
-                                ) : (
-                                  <span style={{ width: 10, flexShrink: 0 }} />
-                                )}
-                                <PathLabel text={name} style={{ flex: 1 }} />
-                                {holder && (
-                                  <span title={holder.path} style={{ flexShrink: 0, display: "flex", alignItems: "center", color: "var(--text-dim)" }}>
-                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                      <line x1="6" y1="3" x2="6" y2="15" />
-                                      <circle cx="18" cy="6" r="3" />
-                                      <circle cx="6" cy="18" r="3" />
-                                      <path d="M18 9a9 9 0 0 1-9 9" />
-                                    </svg>
-                                  </span>
-                                )}
-                                {remote && !holder && (
-                                  <span style={{ flexShrink: 0, color: "var(--text-dim)", fontSize: 10 }}>{t("sidebar.remoteBranchTag")}</span>
-                                )}
-                                {switching && (
-                                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinecap="round" style={{ flexShrink: 0, animation: "spin 0.8s linear infinite" }}>
-                                    <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-                                  </svg>
-                                )}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {!wtNewOpen ? (
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setWtNewOpen(true);
-                        setWtError(null);
-                        setTimeout(() => wtNewInputRef.current?.focus(), 0);
-                      }}
-                      title={t("sidebar.createWorktreeTitle")}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 7,
-                        width: "100%",
-                        padding: "8px 10px",
-                        background: "none",
-                        border: "none",
-                        color: "var(--text-muted)",
-                        cursor: "pointer",
-                        textAlign: "left",
-                        fontSize: 11,
-                      }}
-                    >
-                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" style={{ flexShrink: 0 }}>
-                        <line x1="5" y1="1" x2="5" y2="9" />
-                        <line x1="1" y1="5" x2="9" y2="5" />
-                      </svg>
-                       <span>{t("sidebar.newWorktree")}</span>
-                    </button>
-                  ) : (
-                    <div style={{ padding: "6px 8px" }}>
-                      <input
-                        ref={wtNewInputRef}
-                        value={wtNewBranch}
-                        list="pi-worktree-branches"
-                        onChange={(e) => {
-                          setWtNewBranch(e.target.value);
-                          setWtError(null);
-                        }}
-                        onKeyDown={(e) => {
-                          if (isImeComposing(e)) return;
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            void handleCreateWorktree();
-                          }
-                          if (e.key === "Escape") {
-                            setWtNewOpen(false);
-                            setWtNewBranch("");
-                            setWtError(null);
-                          }
-                        }}
-                         placeholder={t("sidebar.branchName")}
-                        style={{
-                          width: "100%",
-                          fontSize: 11,
-                          fontFamily: "var(--font-mono)",
-                          padding: "5px 8px",
-                          border: "var(--hairline) solid var(--accent)",
-                          borderRadius: 5,
-                          outline: "none",
-                          background: "var(--bg)",
-                          color: "var(--text)",
-                          boxSizing: "border-box",
-                        }}
-                      />
-                      <datalist id="pi-worktree-branches">
-                        {wtBranches.map((branch) => (
-                          <option key={branch} value={branch} />
-                        ))}
-                      </datalist>
-                      {wtBranches.length > 0 && (
-                        <div style={{ marginTop: 5, maxHeight: 96, overflowY: "auto", display: "flex", flexDirection: "column", gap: 2 }}>
-                          {wtBranches.slice(0, 8).map((branch) => (
-                            <button
-                              key={branch}
-                              type="button"
-                              onClick={() => setWtNewBranch(branch)}
-                              style={{
-                                textAlign: "left",
-                                padding: "3px 6px",
-                                border: "none",
-                                borderRadius: 4,
-                                background: branch === wtNewBranch ? "var(--bg-selected)" : "transparent",
-                                color: "var(--text-muted)",
-                                fontFamily: "var(--font-mono)",
-                                fontSize: 10,
-                                cursor: "pointer",
-                              }}
-                            >
-                              {branch}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      <div style={{ display: "flex", gap: 5, marginTop: 5 }}>
-                        <button
-                          onClick={() => void handleCreateWorktree()}
-                          disabled={wtBusy || !wtNewBranch.trim()}
-                          style={{
-                            flex: 1,
-                            padding: "4px 0",
-                            background: "var(--accent)",
-                            border: "none",
-                            borderRadius: 5,
-                            color: "var(--accent-contrast)",
-                            fontSize: 11,
-                            fontWeight: 600,
-                            cursor: wtBusy || !wtNewBranch.trim() ? "not-allowed" : "pointer",
-                            opacity: wtBusy || !wtNewBranch.trim() ? 0.65 : 1,
-                          }}
-                        >
-                           {wtBusy ? t("sidebar.creating") : t("sidebar.create")}
-                        </button>
-                        <button
-                          onClick={() => { setWtNewOpen(false); setWtNewBranch(""); setWtError(null); }}
-                          style={{
-                            flex: 1,
-                            padding: "4px 0",
-                            background: "var(--bg-hover)",
-                            border: "var(--hairline) solid var(--border)",
-                            borderRadius: 5,
-                            color: "var(--text-muted)",
-                            fontSize: 11,
-                            cursor: "pointer",
-                          }}
-                        >
-                           {t("sidebar.cancel")}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  {wtError && (
-                    <div style={{
-                      padding: "5px 10px 8px",
-                      color: "#dc2626",
-                      fontSize: 11,
-                      lineHeight: 1.35,
-                      overflowWrap: "anywhere",
-                    }}>
-                      {wtError}
-                    </div>
-                  )}
-              </AnimatedDropdown>
-            </div>
-          );
-        })()}
-        {showLegacyHeaderProjectRows && inactiveWorktreeSelector && (
-          <button
-            type="button"
-            className="sidebar-header-row"
-            aria-disabled={inactiveWorktreeSelector.onClick ? undefined : "true"}
-            tabIndex={inactiveWorktreeSelector.onClick ? undefined : -1}
-            onClick={inactiveWorktreeSelector.onClick}
-            title={inactiveWorktreeSelector.title}
-            style={inactiveWorktreeSelector.onClick
-              ? { color: "var(--text-muted)" }
-              : { color: "var(--text-dim)", cursor: "default", opacity: 0.82 }}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-              <line x1="6" y1="3" x2="6" y2="15" />
-              <circle cx="18" cy="6" r="3" />
-              <circle cx="6" cy="18" r="3" />
-              <path d="M18 9a9 9 0 0 1-9 9" />
-            </svg>
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12 }}>{inactiveWorktreeSelector.label}</span>
-          </button>
-        )}
       </div>
 {/* Session search — keeps the original sidebar search styling and
           narrows the project tree to matching titles / first messages. Enter is
@@ -1927,211 +1816,300 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
           </button>
         )}
       </div>
-      {/* Project tree (Codex-style) — replaces the old CHATS/FILES tabs. Every
-          project is rendered as a flat row whose chats nest directly beneath.
-          Clicking a project header toggles collapse; the ⋯ menu offers sort
-          and collapse/expand-all; the + button opens the project picker to
-          add a new project. The FileExplorer has moved to the right panel. */}
-      {allProjects.length === 0 ? (
-        <div className="sidebar-project-tree-empty">
-          {loading
-            ? t("sidebar.loading")
-            : error
-              ? (
-                // A failed list load must not read as "no projects": that
-                // offers "Add project" as if the user's sessions were gone.
-                <div className="sidebar-empty-action" role="alert">
-                  <span className="sidebar-empty-text" title={error}>{t("sidebar.loadFailed")}</span>
-                  <button
-                    type="button"
-                    className="sidebar-empty-add"
-                    onClick={() => void loadSessions(true, true)}
-                  >
-                    <span>{t("common.retry")}</span>
-                  </button>
-                </div>
-              )
-            : trimmedSessionQuery
-              ? t("sidebar.noMatchingSessions")
-              : (
-                <div className="sidebar-empty-action">
-                  <span className="sidebar-empty-text">{t("sidebar.noProjects")}</span>
-                  <button
-                    type="button"
-                    className="sidebar-empty-add"
-                    onClick={() => void handleAddProject()}
-                    title={t("sidebar.addProject")}
-                    aria-label={t("sidebar.addProject")}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <line x1="12" y1="5" x2="12" y2="19" />
-                      <line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
-                    <span>{t("sidebar.addProject")}</span>
-                  </button>
-                </div>
-              )}
-        </div>
-      ) : (
-        <SessionSearch
-          open={contentSearch}
-          query={sessionQuery}
-          selectedSessionId={selectedSessionId}
-          onSelectSession={handleSelectSessionFromList}
-        >
-        <div ref={listScrollRef} className="sidebar-project-tree" onScroll={handleListScroll}>
-          <div className="sidebar-project-tree-header">
-            <span className="sidebar-project-tree-title">{t("sidebar.projects")}</span>
-            <div className="sidebar-project-tree-tools">
-              <button
-                className="sidebar-project-tree-menu"
-                title={t("sidebar.moreActions")}
-                aria-label={t("sidebar.moreActions")}
-                onClick={() => {
-                  if (allProjects.some((g) => !collapsedProjects.has(g.projectRoot))) {
-                    setCollapsedProjects(new Set(allProjects.map((g) => g.projectRoot)));
-                  } else {
-                    setCollapsedProjects(new Set());
-                  }
-                }}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-                  <circle cx="5" cy="12" r="1.6" />
-                  <circle cx="12" cy="12" r="1.6" />
-                  <circle cx="19" cy="12" r="1.6" />
-                </svg>
-              </button>
-              <button
-                type="button"
-                className="sidebar-project-tree-add"
-                onClick={() => void handleAddProject()}
-                title={t("sidebar.addProject")}
-                aria-label={t("sidebar.addProject")}
-              >
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-              </button>
-            </div>
+      {/* Chats sit beside Projects: the same session model and event stream,
+          but a model-only workspace that never enters project grouping. */}
+      <SessionSearch
+        open={contentSearch}
+        query={sessionQuery}
+        selectedSessionId={selectedSessionId}
+        onSelectSession={handleSelectSessionFromList}
+      >
+      <div
+        ref={listScrollRef}
+        className="sidebar-project-tree"
+        role="tree"
+        aria-label={`${t("sidebar.chats")} / ${t("sidebar.projects")}`}
+        onScroll={handleListScroll}
+      >
+        <div className={`sidebar-project-tree-header sidebar-chats-header${chatsMenuOpen ? " is-menu-open" : ""}`}>
+          <button
+            type="button"
+            className="sidebar-chats-title"
+            data-sidebar-tree-row
+            aria-expanded={!chatsFolded}
+            title={t(chatsFolded ? "sidebar.expandChats" : "sidebar.collapseChats")}
+            onClick={() => setChatsFolded(!chatsCollapsed)}
+          >
+            <span className="sidebar-project-tree-title">{t("sidebar.chats")}</span>
+            {/* A folded section hides its rows, so the count and any running or
+                unread chips stay readable on the header, like a folded project. */}
+            {chatsFolded && chatFamilies.length > 0 && (
+              <span className="sidebar-project-tree-count" title={t("sidebar.sessionCount", { count: chatFamilies.length })}>
+                ({chatFamilies.length})
+              </span>
+            )}
+            {chatsFolded && (
+              <span className="sidebar-project-tree-meta">
+                {chatRunningCount > 0 && (
+                  <span className="sidebar-project-tree-chip is-running" title={t("sidebar.runningCount", { count: chatRunningCount })}>
+                    {chatRunningCount}
+                  </span>
+                )}
+                {chatUnreadCount > 0 && (
+                  <span className="sidebar-project-tree-chip is-unread" title={t("sidebar.unreadCount", { count: chatUnreadCount })}>
+                    {chatUnreadCount}
+                  </span>
+                )}
+              </span>
+            )}
+          </button>
+          <div className="sidebar-project-tree-tools">
+            <button
+              ref={chatsMenuButtonRef}
+              type="button"
+              className={`sidebar-project-tree-menu${chatsMenuOpen ? " is-open" : ""}`}
+              title={t("sidebar.chatsMenu")}
+              aria-label={t("sidebar.chatsMenu")}
+              aria-haspopup="menu"
+              aria-expanded={chatsMenuOpen}
+              onClick={toggleChatsMenu}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <circle cx="5" cy="12" r="1.6" />
+                <circle cx="12" cy="12" r="1.6" />
+                <circle cx="19" cy="12" r="1.6" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="sidebar-project-tree-add"
+              onClick={() => handleNewSession(chatWorkspaceCwd ?? undefined, "chat")}
+              disabled={!chatWorkspaceCwd}
+              title={t("sidebar.newChatTitle")}
+              aria-label={t("sidebar.newChatTitle")}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
           </div>
-          {activeProjects.map((group) => renderProjectGroup(group))}
         </div>
-        </SessionSearch>
-      )}
-      {projectMenu && projectMenuPos && createPortal(
-        <div
-          ref={projectMenuRef}
-          className="sidebar-project-context-menu native-popover"
-          style={{ top: projectMenuPos.top, left: projectMenuPos.left, maxHeight: "min(70vh, 420px)", overflowY: "auto" }}
-          role="menu"
-        >
-          {!projectBranchMenu ? (
-            <>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => void openProjectBranchMenu(projectMenu.root)}
-              >
-                {t("sidebar.switchBranch")}
-              </button>
-              {onOpenTerminal && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => {
-                    const cwd = projectMenu.root;
-                    setProjectMenu(null);
-                    onOpenTerminal(cwd);
-                  }}
-                >
-                  {t("sidebar.openTerminalHere")}
-                </button>
-              )}
-              {(isTauriDesktop() || fileManagerAvailability?.supported) && (
-                <button
-                  type="button"
-                  role="menuitem"
-                  onClick={() => void revealProjectInFileManager(projectMenu.root)}
-                >
-                  {revealProjectLabel}
-                </button>
-              )}
-              {projectRevealError && (
-                <div className="sidebar-project-context-menu-hint" role="alert">{projectRevealError}</div>
-              )}
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => archiveProject(projectMenu.root)}
-              >
-                {t("sidebar.archiveProject")}
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                type="button"
-                role="menuitem"
-                className="sidebar-project-context-menu-back"
-                onClick={() => setProjectBranchMenu(null)}
-              >
-                <span aria-hidden="true">‹</span> {t("sidebar.moreActions")}
-              </button>
-              <div className="sidebar-project-context-menu-heading">{t("sidebar.switchBranch")}</div>
-              {projectBranchLoading && projectBranchMenu.root === projectMenu.root && (
-                <div className="sidebar-project-context-menu-hint">…</div>
-              )}
-              {projectBranchMenu.loaded && projectBranchMenu.root === projectMenu.root && (
-                <>
-                  {[...projectBranchMenu.branches.map((name) => ({ name, remote: false })),
-                    ...projectBranchMenu.remoteBranches.map((name) => ({ name, remote: true }))]
-                    .map(({ name, remote }) => {
-                      const checkout = projectBranchMenu.worktrees.find((w) => w.path === selectedCwd)
-                        ?? projectBranchMenu.worktrees.find((w) => w.isMain);
-                      const isCurrent = checkout?.branch === name;
-                      const holder = projectBranchMenu.worktrees.find((w) => w.branch === name && w.path !== checkout?.path);
-                      const switching = wtSwitchingBranch === name;
-                      return (
-                        <button
-                          key={`${remote ? "remote:" : "local:"}${name}`}
-                          type="button"
-                          role="menuitem"
-                          disabled={wtSwitchingBranch !== null}
-                          onClick={() => void handleSwitchProjectBranch(projectMenu.root, name)}
-                          title={holder
-                            ? t("sidebar.branchInWorktreeTitle", { branch: name })
-                            : remote
-                              ? t("sidebar.branchRemoteTitle")
-                              : t("sidebar.switchBranchTitle", { branch: name })}
-                        >
-                          <span className="sidebar-project-context-menu-branch-mark" aria-hidden="true">
-                            {isCurrent ? "✓" : ""}
-                          </span>
-                          <span>{name}</span>
-                          {holder && <span className="sidebar-project-context-menu-branch-tag">worktree</span>}
-                          {remote && !holder && <span className="sidebar-project-context-menu-branch-tag">{t("sidebar.remoteBranchTag")}</span>}
-                          {switching && <span className="sidebar-project-context-menu-branch-spinner" aria-hidden="true">↻</span>}
-                        </button>
-                      );
-                    })}
-                  {projectBranchMenu.branches.length === 0 && projectBranchMenu.remoteBranches.length === 0 && (
-                    <div className="sidebar-project-context-menu-hint">{t("sidebar.noOtherBranches")}</div>
-                  )}
-                </>
-              )}
-            </>
+        {!chatsFolded && (
+        <div className="sidebar-project-tree-children sidebar-chats-list">
+          {visibleChatFamilies.map((family) => (
+            <Fragment key={family.root.id}>{renderChatFamily(family)}</Fragment>
+          ))}
+          {!loading && !error && chatFamilies.length === 0 && (
+            <div className="sidebar-chats-empty">
+              {trimmedSessionQuery ? t("sidebar.noMatchingSessions") : t("sidebar.noChats")}
+            </div>
           )}
-        </div>,
-        document.body,
+          {hiddenChatFamilyCount > 0 && (
+            <button
+              type="button"
+              className="sidebar-project-tree-show-more"
+              onClick={() => setChatSessionPages((pages) => pages + 1)}
+            >
+              {t("sidebar.showMoreSessions", {
+                count: Math.min(MAX_VISIBLE_CHAT_SESSIONS, hiddenChatFamilyCount),
+              })}
+            </button>
+          )}
+          {archivedChatFamilies.length > 0 && (
+            <button
+              type="button"
+              className="sidebar-project-tree-show-more sidebar-chats-archived-toggle"
+              aria-expanded={showArchivedChats}
+              onClick={() => setShowArchivedChats((open) => !open)}
+            >
+              {t(showArchivedChats ? "sidebar.hideArchivedChats" : "sidebar.showArchivedChats", {
+                count: archivedChatFamilies.length,
+              })}
+            </button>
+          )}
+          {showArchivedChats && archivedChatFamilies.map((family) => (
+            <div key={family.root.id} className="sidebar-chats-archived-row">
+              {renderChatFamily(family)}
+            </div>
+          ))}
+        </div>
+        )}
+
+        <div className={`sidebar-project-tree-header${projectViewMenuOpen ? " is-menu-open" : ""}`}>
+          <span className="sidebar-project-tree-title">{t("sidebar.projects")}</span>
+          <div className="sidebar-project-tree-tools">
+            <button
+              ref={projectViewMenuButtonRef}
+              type="button"
+              className={`sidebar-project-tree-menu${projectViewMenuOpen ? " is-open" : ""}`}
+              title={t("sidebar.projectViewMenu")}
+              aria-label={t("sidebar.projectViewMenu")}
+              aria-haspopup="menu"
+              aria-expanded={projectViewMenuOpen}
+              onClick={toggleProjectViewMenu}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+                <circle cx="5" cy="12" r="1.6" />
+                <circle cx="12" cy="12" r="1.6" />
+                <circle cx="19" cy="12" r="1.6" />
+              </svg>
+            </button>
+            <button
+              type="button"
+              className="sidebar-project-tree-add"
+              onClick={() => void handleAddProject()}
+              title={t("sidebar.addProject")}
+              aria-label={t("sidebar.addProject")}
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <line x1="12" y1="5" x2="12" y2="19" />
+                <line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+        {allProjects.length === 0 ? (
+          <div className="sidebar-project-tree-empty">
+            {loading
+              ? t("sidebar.loading")
+              : error
+                ? (
+                  // A failed list load must not read as "no projects": that
+                  // offers "Add project" as if the user's sessions were gone.
+                  <div className="sidebar-empty-action" role="alert">
+                    <span className="sidebar-empty-text" title={error}>{t("sidebar.loadFailed")}</span>
+                    <button
+                      type="button"
+                      className="sidebar-empty-add"
+                      onClick={() => void loadSessions(true, true)}
+                    >
+                      <span>{t("common.retry")}</span>
+                    </button>
+                  </div>
+                )
+              : trimmedSessionQuery
+                ? t("sidebar.noMatchingSessions")
+                : (
+                  <div className="sidebar-empty-action">
+                    <span className="sidebar-empty-text">{t("sidebar.noProjects")}</span>
+                    <button
+                      type="button"
+                      className="sidebar-empty-add"
+                      onClick={() => void handleAddProject()}
+                      title={t("sidebar.addProject")}
+                      aria-label={t("sidebar.addProject")}
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <line x1="12" y1="5" x2="12" y2="19" />
+                        <line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                      <span>{t("sidebar.addProject")}</span>
+                    </button>
+                  </div>
+                )}
+          </div>
+        ) : projectViewMode === "timeline"
+          ? renderTimeline()
+          : activeProjects.map((group) => renderProjectGroup(group))}
+      </div>
+      </SessionSearch>
+      {chatsMenuOpen && chatsMenuPos && (
+        <ChatsSectionMenu
+          menuRef={chatsMenuRef}
+          pos={chatsMenuPos}
+          onClose={closeChatsMenu}
+          canCollapse={!chatsCollapsed}
+          canExpand={chatsCollapsed}
+          onCollapse={() => {
+            setChatsFolded(true);
+            closeChatsMenu();
+          }}
+          onExpand={() => {
+            setChatsFolded(false);
+            closeChatsMenu();
+          }}
+        />
+      )}
+      {projectViewMenuOpen && projectViewMenuPos && (
+        <ProjectViewMenu
+          menuRef={projectViewMenuRef}
+          pos={projectViewMenuPos}
+          mode={projectViewMode}
+          canCollapseAll={canCollapseAllProjects}
+          canExpandAll={canExpandAllProjects}
+          controlsDisabled={projectViewMode !== "grouped"}
+          onModeChange={changeProjectViewMode}
+          onCollapseAll={collapseAllProjects}
+          onExpandAll={expandAllProjects}
+          onClose={() => setProjectViewMenuPos(null)}
+        />
+      )}
+      {projectMenu && projectMenuPos && (
+        <ProjectContextMenu
+          menuRef={projectMenuRef}
+          projectRoot={projectMenu.root}
+          pos={projectMenuPos}
+          view={projectMenuView}
+          branchMenu={projectBranchMenu}
+          branchLoading={projectBranchLoading}
+          selectedCwd={selectedCwd}
+          switchingBranch={wtSwitchingBranch}
+          fetching={worktreeActions.fetching}
+          worktreeBusy={worktreeActions.busy}
+          worktreeError={worktreeActions.error}
+          confirmRemove={worktreeActions.confirmRemove}
+          newBranch={worktreeActions.newBranch}
+          canReveal={isTauriDesktop() || fileManagerAvailability?.supported === true}
+          revealLabel={revealProjectLabel}
+          projectRevealError={projectRevealError}
+          t={t}
+          onShowBranches={() => showProjectMenuView(projectMenu.root, "branches")}
+          onShowWorktrees={() => showProjectMenuView(projectMenu.root, "worktrees")}
+          onShowNewWorktree={() => showProjectMenuView(projectMenu.root, "new-worktree")}
+          onBackToActions={() => showProjectMenuView(projectMenu.root, "actions")}
+          onClose={closeProjectMenu}
+          onOpenTerminal={onOpenTerminal ? () => {
+            const cwd = projectMenu.root;
+            closeProjectMenu();
+            onOpenTerminal(cwd);
+          } : undefined}
+          onReveal={() => void revealProjectInFileManager(projectMenu.root)}
+          onArchive={() => archiveProject(projectMenu.root)}
+          onSwitchBranch={(branch) => void handleSwitchProjectBranch(projectMenu.root, branch)}
+          onFetch={() => void worktreeActions.fetchBranches(projectMenu.root)}
+          onSelectWorktree={(path) => {
+            setSelectedCwd(path);
+            closeProjectMenu();
+          }}
+          onRequestRemove={worktreeActions.requestRemove}
+          onConfirmRemove={(removal) => void worktreeActions.remove(projectMenu.root, removal)}
+          onCancelRemove={worktreeActions.cancelRemove}
+          onNewBranchChange={worktreeActions.setNewBranch}
+          onCreateWorktree={() => void worktreeActions.create(projectMenu.root)}
+        />
+      )}
+      {continueChat && (
+        <div className="project-picker-modal-overlay" role="dialog" aria-modal="true" aria-label={t("sidebar.continueInProject")} onClick={() => setContinueChat(null)}>
+          <div className="project-picker-modal-shell" onClick={(e) => e.stopPropagation()}>
+            <ProjectPicker
+              recentProjects={recentProjects}
+              selectedCwd={null}
+              selectedProject={null}
+              homeDir={homeDir}
+              onSelectCwd={(cwd) => void continueChatInProject(continueChat, cwd)}
+              variant="block"
+            />
+          </div>
+        </div>
       )}
       {projectPickerOpen && (
         <div className="project-picker-modal-overlay" role="dialog" aria-modal="true" onClick={() => setProjectPickerOpen(false)}>
           <div className="project-picker-modal-shell" onClick={(e) => e.stopPropagation()}>
             <ProjectPicker
               recentProjects={recentProjects}
-              selectedCwd={selectedCwdProp ?? null}
-              selectedProject={selectedProjectObject?.root ?? null}
+              selectedCwd={selectedCwdProp && !isChatCwd(selectedCwdProp) ? selectedCwdProp : null}
+              selectedProject={selectedProjectRoot}
               homeDir={homeDir}
               onSelectCwd={(cwd) => {
                 activateProject(cwd);
@@ -2155,7 +2133,10 @@ function SessionFamilyItem({
   onSelectSession,
   onRenamed,
   onSessionDeleted,
+  onContinueInProject,
+  chatActions,
   familySessions,
+  subtitle,
 }: {
   node: SessionTreeNode;
   familySessions?: SessionInfo[];
@@ -2166,6 +2147,12 @@ function SessionFamilyItem({
   onSelectSession: (s: SessionInfo) => void;
   onRenamed?: () => void;
   onSessionDeleted?: (id: string) => void;
+  /** Chats only: copy the conversation into a project. */
+  onContinueInProject?: (session: SessionInfo) => void;
+  /** Chats only: pin and archive, which the row menu offers beside the other actions. */
+  chatActions?: ChatRowActions;
+  /** Cross-project context, shown by the chronological sidebar view. */
+  subtitle?: string;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   const hasChildren = node.children.length > 0;
@@ -2191,9 +2178,12 @@ function SessionFamilyItem({
           onClick={() => onSelectSession(node.session)}
           onRenamed={onRenamed}
           onDeleted={(id) => onSessionDeleted?.(id)}
+          onContinueInProject={depth === 0 ? onContinueInProject : undefined}
+          chatActions={depth === 0 ? chatActions : undefined}
           hasChildren={hasChildren}
           collapsed={collapsed}
           onToggleCollapse={() => setCollapsed((v) => !v)}
+          subtitle={subtitle}
         />
       </div>
       {hasChildren && !collapsed && (
@@ -2209,6 +2199,7 @@ function SessionFamilyItem({
               onSelectSession={onSelectSession}
               onRenamed={onRenamed}
               onSessionDeleted={onSessionDeleted}
+              subtitle={subtitle}
             />
           ))}
         </div>
@@ -2325,6 +2316,13 @@ function showProjectActivity(
   );
 }
 
+interface ChatRowActions {
+  pinned: boolean;
+  archived: boolean;
+  onTogglePin: () => void;
+  onToggleArchive: () => void;
+}
+
 function SessionItem({
   session,
   isSelected,
@@ -2333,10 +2331,13 @@ function SessionItem({
   onClick,
   onRenamed,
   onDeleted,
+  onContinueInProject,
+  chatActions,
   hasChildren = false,
   collapsed = false,
   onToggleCollapse,
   isSubagentChild = false,
+  subtitle,
 }: {
   session: SessionInfo;
   isSelected: boolean;
@@ -2345,25 +2346,31 @@ function SessionItem({
   onClick: () => void;
   onRenamed?: () => void;
   onDeleted?: (id: string) => void;
+  onContinueInProject?: (session: SessionInfo) => void;
+  chatActions?: ChatRowActions;
   hasChildren?: boolean;
   collapsed?: boolean;
   onToggleCollapse?: () => void;
   isSubagentChild?: boolean;
+  /** Cross-project context; omitted inside the project tree where the group already names it. */
+  subtitle?: string;
 }) {
   const { locale, t } = useI18n();
   const [hovered, setHovered] = useState(false);
   // Coarse pointers have no hover: the "…" action menu must be permanently
   // visible there, otherwise rename/delete are unreachable on touch.
   const [touchMode, setTouchMode] = useState(false);
-  const [actionError, setActionError] = useState<string | null>(null);
   // Downstream hook (extensions/desktop) may claim the row's context menu;
   // when it handles the event the built-in menu never opens.
   const [renaming, setRenaming] = useState(false);
   const [renameValue, setRenameValue] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // A chat with a folder asks in a dialog, which can also move the folder to the Trash.
+  const [folderDeleteOpen, setFolderDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
+  const [treeFocused, setTreeFocused] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
@@ -2393,9 +2400,14 @@ function SessionItem({
     setRenaming(true);
   }, [session.name, session.transient]);
 
+  const beginDeleteConfirmation = useCallback(() => {
+    if (session.transient) return;
+    if (session.chatFolder) setFolderDeleteOpen(true);
+    else setConfirmDelete(true);
+  }, [session.chatFolder, session.transient]);
+
   const reportActionError = useCallback((message: string) => {
-    setActionError(message);
-    window.setTimeout(() => setActionError((current) => current === message ? null : current), 3500);
+    appNotify.error({ message });
   }, []);
 
   const commitRename = useCallback(async () => {
@@ -2422,12 +2434,15 @@ function SessionItem({
     }
   }, [renameValue, session.id, session.name, onRenamed, reportActionError, t, title]);
 
-  const performDelete = useCallback(async () => {
+  const performDelete = useCallback(async (trashChatFolder = false) => {
     if (session.transient) return;
     setConfirmDelete(false);
     setDeleting(true);
     try {
-      const res = await fetch(`/api/sessions/${encodeURIComponent(session.id)}`, { method: "DELETE" });
+      const res = await fetch(
+        `/api/sessions/${encodeURIComponent(session.id)}${trashChatFolder ? "?chatFolder=trash" : ""}`,
+        { method: "DELETE" },
+      );
       if (!res.ok) {
         const d = await res.json().catch(() => ({})) as { error?: string };
         throw new Error(d.error ?? `HTTP ${res.status}`);
@@ -2449,7 +2464,16 @@ function SessionItem({
     setMenuOpen(true);
     const shown = await showNativeMenu([
       { label: t("sidebar.rename"), onSelect: startRename },
-      { label: t("sidebar.delete"), onSelect: () => setConfirmDelete(true) },
+      ...(chatActions
+        ? [{ label: t(chatActions.pinned ? "sidebar.unpinChat" : "sidebar.pinChat"), onSelect: chatActions.onTogglePin }]
+        : []),
+      ...(onContinueInProject
+        ? [{ label: t("sidebar.continueInProject"), onSelect: () => onContinueInProject(session) }]
+        : []),
+      ...(chatActions
+        ? [{ label: t(chatActions.archived ? "sidebar.unarchiveChat" : "sidebar.archiveChat"), onSelect: chatActions.onToggleArchive }]
+        : []),
+      { label: t("sidebar.delete"), onSelect: beginDeleteConfirmation },
       { kind: "separator" },
       {
         label: `${formatRelativeTime(session.modified, locale)} · ${t("sidebar.messagesCount", { count: session.messageCount })}`,
@@ -2462,7 +2486,7 @@ function SessionItem({
     ], at);
     setMenuOpen(false);
     return shown;
-  }, [locale, session.compactionCount, session.messageCount, session.modified, session.transient, session.worktreeBranch, startRename, t]);
+  }, [beginDeleteConfirmation, chatActions, onContinueInProject, session, locale, startRename, t]);
 
   const handleContextMenu = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
     const handled = dispatchSessionRowContextMenu({
@@ -2494,7 +2518,7 @@ function SessionItem({
     if (menuOpen) { setMenuOpen(false); return; }
     const rect = e.currentTarget.getBoundingClientRect();
     const openDomMenu = () => {
-      const estHeight = 124;
+      const estHeight = 124 + (onContinueInProject ? 30 : 0) + (chatActions ? 60 : 0);
       const left = Math.max(8, Math.min(rect.right - MENU_WIDTH, window.innerWidth - MENU_WIDTH - 8));
       let top = rect.bottom + 4;
       if (top + estHeight > window.innerHeight - 8) top = rect.top - estHeight - 4;
@@ -2508,7 +2532,7 @@ function SessionItem({
       return;
     }
     openDomMenu();
-  }, [menuOpen, showNativeSessionMenu]);
+  }, [chatActions, menuOpen, onContinueInProject, showNativeSessionMenu]);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -2547,7 +2571,25 @@ function SessionItem({
   return (
     <div
       className={`session-item${isSelected ? " is-selected" : ""}${isRunning ? " is-running" : ""}${isUnread ? " is-unread" : ""}`}
+      data-sidebar-tree-row
+      tabIndex={0}
+      role="treeitem"
+      aria-selected={isSelected}
+      onBlur={() => setTreeFocused(false)}
       onClick={confirmDelete || renaming ? undefined : onClick}
+      onKeyDown={(e) => handleSidebarTreeKeyDown(e, {
+        activate: () => {
+          if (!confirmDelete && !renaming) onClick();
+        },
+        expand: () => {
+          if (hasChildren && collapsed) onToggleCollapse?.();
+        },
+        collapse: () => {
+          if (hasChildren && !collapsed) onToggleCollapse?.();
+        },
+        rename: startRename,
+        requestDelete: beginDeleteConfirmation,
+      })}
       onContextMenu={confirmDelete || renaming ? undefined : handleContextMenu}
       onMouseEnter={() => {
         setHovered(true);
@@ -2556,6 +2598,7 @@ function SessionItem({
       onPointerDown={() => {
         if (!isRunning && !isSelected) prefetchSessionData(session.id);
       }}
+      onFocus={() => setTreeFocused(true)}
       onMouseLeave={() => { setHovered(false); }}
       style={{
         height: SESSION_LIST_ITEM_HEIGHT,
@@ -2566,7 +2609,7 @@ function SessionItem({
         cursor: confirmDelete || renaming ? "default" : "pointer",
         background: confirmDelete
           ? "color-mix(in srgb, var(--danger) 6%, transparent)"
-          : isSelected ? "var(--bg-selected)" : (hovered || menuOpen) ? "var(--bg-hover)" : "transparent",
+          : isSelected ? "var(--bg-selected)" : (hovered || treeFocused || menuOpen) ? "var(--bg-hover)" : "transparent",
         borderLeft: confirmDelete
           ? "2px solid var(--danger)"
           : isSelected ? "2px solid var(--accent)" : "2px solid transparent",
@@ -2664,7 +2707,7 @@ function SessionItem({
           )}
           <span
             className="session-item-title"
-            title={title}
+            title={subtitle ? `${title} · ${subtitle}` : title}
             style={{
               flex: 1,
               minWidth: 0,
@@ -2679,6 +2722,16 @@ function SessionItem({
           >
             {title}
           </span>
+          {chatActions?.pinned && (
+            <svg className="session-item-pin" aria-label={t("sidebar.unpinChat")} width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z" />
+            </svg>
+          )}
+          {subtitle && (
+            <span className="session-item-project" title={subtitle}>
+              {subtitle}
+            </span>
+          )}
 
           {/* Collapse toggle — always visible when has children */}
           {hasChildren && (
@@ -2714,7 +2767,7 @@ function SessionItem({
                 width: 28, height: 24, flexShrink: 0,
               }}
             >
-              {hovered || touchMode || menuOpen ? (
+              {hovered || treeFocused || touchMode || menuOpen ? (
                 <button
                   ref={menuButtonRef}
                   onClick={toggleMenu}
@@ -2749,7 +2802,7 @@ function SessionItem({
           {menuOpen && menuPos && createPortal(
             <div
               ref={menuRef}
-              className="native-popover session-item-menu"
+              className="native-popover app-menu session-item-menu"
               role="menu"
               onClick={(e) => e.stopPropagation()}
               style={{
@@ -2774,6 +2827,61 @@ function SessionItem({
                 </svg>
                 {t("sidebar.rename")}
               </button>
+              {chatActions && (
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); chatActions.onTogglePin(); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    width: "100%", height: 30, padding: "0 8px",
+                    background: "transparent", border: 0, borderRadius: 7,
+                    color: "var(--text)", cursor: "pointer",
+                    fontSize: 13, textAlign: "left",
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M12 17v5M9 3h6l-1 6 3 3v2H7v-2l3-3z" />
+                  </svg>
+                  {t(chatActions.pinned ? "sidebar.unpinChat" : "sidebar.pinChat")}
+                </button>
+              )}
+              {onContinueInProject && (
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); onContinueInProject(session); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    width: "100%", height: 30, padding: "0 8px",
+                    background: "transparent", border: 0, borderRadius: 7,
+                    color: "var(--text)", cursor: "pointer",
+                    fontSize: 13, textAlign: "left",
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+                  </svg>
+                  {t("sidebar.continueInProject")}
+                </button>
+              )}
+              {chatActions && (
+                <button
+                  role="menuitem"
+                  onClick={() => { setMenuOpen(false); chatActions.onToggleArchive(); }}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    width: "100%", height: 30, padding: "0 8px",
+                    background: "transparent", border: 0, borderRadius: 7,
+                    color: "var(--text)", cursor: "pointer",
+                    fontSize: 13, textAlign: "left",
+                  }}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                    <rect x="3" y="4" width="18" height="4" rx="1" />
+                    <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4" />
+                  </svg>
+                  {t(chatActions.archived ? "sidebar.unarchiveChat" : "sidebar.archiveChat")}
+                </button>
+              )}
               <button
                 role="menuitem"
                 className="is-danger"
@@ -2823,25 +2931,24 @@ function SessionItem({
             document.body,
           )}
 
-          {actionError && createPortal(
-            <div
-              role="alert"
-              style={{
-                position: "fixed", bottom: 26, left: "50%", transform: "translateX(-50%)",
-                zIndex: 1000, maxWidth: "80vw",
-                background: "color-mix(in srgb, var(--bg-panel) 94%, #000)",
-                color: "var(--danger)",
-                border: "var(--hairline) solid color-mix(in srgb, var(--danger) 35%, transparent)",
-                padding: "8px 14px", borderRadius: 8, fontSize: 12,
-                boxShadow: "0 8px 24px rgba(0,0,0,0.18)",
-                overflowWrap: "anywhere",
-              }}
-            >
-              {actionError}
-            </div>,
-            document.body,
-          )}
         </>
+      )}
+      {folderDeleteOpen && createPortal(
+        <ChatConfirmDialog
+          title={t("sidebar.deleteChatTitle")}
+          body={t("sidebar.deleteChatBody")}
+          checkboxLabel={t("sidebar.deleteChatFolder")}
+          checkboxDefault
+          confirmLabel={t("sidebar.delete")}
+          cancelLabel={t("sidebar.cancel")}
+          danger
+          onCancel={() => setFolderDeleteOpen(false)}
+          onConfirm={(trashFolder) => {
+            setFolderDeleteOpen(false);
+            void performDelete(trashFolder);
+          }}
+        />,
+        document.body,
       )}
     </div>
   );

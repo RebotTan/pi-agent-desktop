@@ -9,7 +9,7 @@ const jiti = createJiti(import.meta.url, {
 });
 const React = await jiti.import("react");
 const { renderToStaticMarkup } = await jiti.import("react-dom/server");
-const { I18nProvider } = await jiti.import("@/hooks/useI18n.tsx");
+const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 const {
   ProjectTrustDialog,
   ProjectTrustDialogView,
@@ -17,14 +17,14 @@ const {
   MCP_LISTING_TIMEOUT_MS,
   projectTrustListingFrom,
 } = await jiti.import("./ProjectTrustDialog.tsx");
-const { enLocale } = await jiti.import("@/lib/i18n/messages/en.ts");
-const source = await readFile(new URL("./ProjectTrustDialog.tsx", import.meta.url), "utf8");
-const apiTypesSource = await readFile(new URL("../lib/api-types.ts", import.meta.url), "utf8");
-const settingsCss = await readFile(new URL("../app/settings.css", import.meta.url), "utf8");
-const appShellSource = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
+const { englishMessages } = await jiti.import("@/lib/i18n/locale-plugins.ts");
+const source = (await readFile(new URL("./ProjectTrustDialog.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const apiTypesSource = (await readFile(new URL("../lib/api-types.ts", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const settingsCss = (await readFile(new URL("../app/settings.css", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const appShellSource = (await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
 
 const h = React.createElement;
-const messages = enLocale.messages;
+const messages = englishMessages;
 
 function render(element) {
   return renderToStaticMarkup(h(I18nProvider, null, element));
@@ -348,7 +348,7 @@ test("every string the dialog shows is translated", async () => {
   const literalKeys = [...source.matchAll(/\bt\("([^"]+)"/g)].map((match) => match[1]);
   const ternaryKeys = [...source.matchAll(/\? "([a-z]+\.[\w.-]+)" : "([a-z]+\.[\w.-]+)"/g)].flatMap((match) => [match[1], match[2]]);
   const returnedKeys = [...source.matchAll(/return "([a-z]+\.[\w.-]+)";/g)].map((match) => match[1]);
-  const helperSource = await readFile(new URL("../lib/mcp-server-display.ts", import.meta.url), "utf8");
+  const helperSource = (await readFile(new URL("../lib/mcp-server-display.ts", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
   const helperKeys = [...helperSource.matchAll(/"(mcp\.[\w.-]+)"/g)].map((match) => match[1]);
   const reasonCodes = [...apiTypesSource.slice(
     apiTypesSource.indexOf("export type McpRefusalReason"),

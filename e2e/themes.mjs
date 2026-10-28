@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
+import { openSettingsSection } from "./settings-navigation.mjs";
 
 const base = process.env.E2E_BASE_URL || "http://127.0.0.1:30141";
 const artifacts = fileURLToPath(new URL("../test-results/themes/", import.meta.url));
@@ -64,17 +65,14 @@ try {
       if (width <= 640) await sidebar.waitFor();
       if (await sidebar.isVisible()) {
         await sidebar.click();
-        // The mobile sidebar slides in; the Settings menu anchors to the button's
-        // position at click time, so wait until the drawer has stopped moving.
+        // Wait until the mobile sidebar has finished sliding in.
         await page.waitForFunction(() => {
           const left = document.querySelector(".session-sidebar")?.getBoundingClientRect().left;
           return left !== undefined && left >= 0;
         });
         await page.waitForTimeout(300);
       }
-      await page.getByRole("button", { name: "Settings", exact: true }).click();
-      // The fork's Settings button opens a section menu; the themes live in General.
-      await page.getByRole("menuitem", { name: "General", exact: true }).click();
+      await openSettingsSection(page, "Appearance");
     };
     const expectTheme = async (theme) => {
       await page.waitForFunction((value) => document.documentElement.dataset.theme === value, theme);
@@ -146,15 +144,15 @@ try {
       await expectTheme("dark");
       await page.reload();
       await expectTheme("dark");
-      for (const key of ["bg", "bg-panel", "bg-hover", "bg-selected", "border", "text", "text-muted", "text-dim", "user-bg", "tool-bg"]) {
-        const hex = await page.locator("html").evaluate((root, token) => getComputedStyle(root).getPropertyValue(`--${token}`).trim(), key);
-        // The fork's dark palette follows Apple's system grays (#1c1c1e is faintly
-        // cool), so require "no visible tint" rather than exactly equal channels.
-        // Translucent tokens (rgba) are overlays, not surfaces; skip them.
-        if (!hex.startsWith("#")) continue;
-        const channels = (hex.length === 4 ? hex.slice(1).match(/./g).map((c) => c + c) : hex.slice(1).match(/../g)).map((c) => parseInt(c, 16));
-        assert.ok(Math.max(...channels) - Math.min(...channels) <= 4, `Dark ${key} (${hex}) must stay near neutral gray`);
-      }
+      const darkSurfaces = await page.locator("html").evaluate((root) => {
+        const style = getComputedStyle(root);
+        return Object.fromEntries(["bg", "workbench-bg", "surface-elevated", "menu-selection-color"]
+          .map((key) => [key, style.getPropertyValue(`--${key}`).trim()]));
+      });
+      assert.deepEqual(darkSurfaces, {
+        bg: "#141418", "workbench-bg": "#232328",
+        "surface-elevated": "#232327", "menu-selection-color": "#6b93ff",
+      }, "The palette keeps its graphite surfaces and shared blue in dark mode");
     }
     assert.deepEqual(errors, []);
     console.log(`PASS ${width}px: palettes, contrast, persistence, system preference, keyboard navigation`);

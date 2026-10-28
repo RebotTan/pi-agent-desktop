@@ -137,10 +137,13 @@ test("fresh sessions use the preference while persisted and live sessions restor
 
   assert.match(
     preferenceSource,
-    /const existingSessionId = session\?\.id;[\s\S]*?useLayoutEffect\(\(\) => \{\s*if \(!existingSessionId && \(!isNew \|\| sessionIdRef\.current\)\) return;\s*setToolPresetState\(getPreferredToolPreset\(\)\)/,
+    /const existingSessionId = session\?\.id;[\s\S]*?useLayoutEffect\(\(\) => \{\s*if \(chatWorkspace\) \{\s*setToolPresetState\("none"\);\s*return;\s*\}\s*if \(!existingSessionId && \(!isNew \|\| sessionIdRef\.current\)\) return;\s*setToolPresetState\(getPreferredToolPreset\(\)\)/,
   );
   assert.match(source, /if \(agentState\?\.running\) \{\s*loadTools\(session\.id\)/);
-  assert.match(source, /d\.toolNames !== undefined \? getPresetFromToolNames\(d\.toolNames\) : CONFIGURED_TOOL_PRESET/);
+  assert.match(
+    source,
+    /setToolPresetState\(chatWorkspace\s*\? "none"\s*: d\.toolNames !== undefined\s*\? getPresetFromToolNames\(d\.toolNames\)\s*: CONFIGURED_TOOL_PRESET\)/,
+  );
   assert.match(changeSource, /setPreferredToolPreset\(preset\)/);
   assert.match(changeSource, /type: "set_tools",\s*\.\.\.\(toolNames !== undefined \? \{ toolNames \} : \{\}\),/);
   assert.match(changeSource, /activeSessionId !== sid \|\| result\?\.recreated/);
@@ -162,13 +165,13 @@ test("sessions the user never overrode follow pi's configured defaultTools (#700
   // A new session must omit toolNames entirely rather than pin pi-web's own preset.
   assert.match(ensureSource, /\.\.\.\(toolNames !== undefined \? \{ toolNames \} : \{\}\),/);
   assert.doesNotMatch(ensureSource, /^ +toolNames,$/m);
-  assert.match(ensureSource, /sessionToolsPinnedRef\.current = toolNames !== undefined/);
+  assert.match(ensureSource, /sessionToolsPinnedRef\.current = chatWorkspace \|\| toolNames !== undefined/);
 
   // An unpinned session keeps saying "configured" instead of borrowing whichever
   // preset its resolved tools happen to match.
   assert.match(
     loadToolsSource,
-    /setToolPresetState\(sessionToolsPinnedRef\.current \? getPresetFromTools\(tools\) : CONFIGURED_TOOL_PRESET\)/,
+    /setToolPresetState\(chatWorkspace\s*\? "none"\s*: sessionToolsPinnedRef\.current\s*\? getPresetFromTools\(tools\)\s*: CONFIGURED_TOOL_PRESET\)/,
   );
 });
 
@@ -202,7 +205,10 @@ test("forking stays available during a run while in-session branch switches wait
   // Fork copies into a new file, so only a shell command blocks it; the
   // in-session edit still waits because pi refuses navigate_tree mid-run.
   assert.match(chatWindowSource, /onFork=\{bashRunning \|\| isNew \? undefined : handleFork\}/);
-  assert.match(chatWindowSource, /onEditContent=\{sessionBusy \? undefined : handleEditContent\}/);
+  assert.match(chatWindowSource, /onEditContent=\{handleEditContent\}/);
+  assert.match(chatWindowSource, /editDisabled=\{sessionBusy\}/);
+  assert.match(messageViewSource, /disabled=\{editBlocked\}/);
+  assert.match(messageViewSource, /t\("i18n\.editFromHereBusyTitle"\)/);
   assert.match(chatWindowSource, /onAskInNewChat && quotedSelection\.sourceEntryId && !bashRunning &&/);
   assert.match(forkSource, /addNotice\(\{ type: "error", message:/);
 
@@ -808,7 +814,7 @@ test("keeps a detached viewport in place when streaming completes", () => {
   assert.match(source, /addEventListener\("scroll", handleScrollPositionChange/);
 });
 
-test("auto-compact slash command toggles session auto-compaction", () => {
+test("auto-compact slash command toggles session auto-compaction", async () => {
   const commandSource = source.slice(
     source.indexOf('case "auto-compact"'),
     source.indexOf('case "reload"'),
@@ -822,24 +828,27 @@ test("auto-compact slash command toggles session auto-compaction", () => {
   assert.match(commandSource, /setAutomation\(\(prev\) => \(\{ \.\.\.prev, autoCompactionEnabled: nextEnabled \}\)\)/);
   assert.doesNotMatch(commandSource, /!autoCompactionEnabled/);
   assert.doesNotMatch(source, /setAutoCompactionEnabled/, "a second auto-compaction state drifts from the gear");
-  assert.match(source, /autoCompactionEnabled: state\?\.autoCompactionEnabled \?\? prev\.autoCompactionEnabled/);
+  assert.match(source, /syncAutomation\(state\);/);
+  const automationSource = await jitiSource(new URL("./useSessionAutomation.ts", import.meta.url));
+  assert.match(automationSource, /autoCompactionEnabled: state\?\.autoCompactionEnabled \?\? prev\.autoCompactionEnabled/);
 });
 
 test("keeps the compaction control reachable while a turn is auto-compacting", () => {
   // Auto-compaction starts mid-turn, so `isStreaming` (sessionBusy) is already true. Hiding
   // the control behind `!isStreaming` left only the generic stop button, which aborts the
   // whole prompt instead of the compaction.
-  // The fork's compact button carries the compactError popover between the
-  // guard and the onClick, so the window reaches back past it.
+  // Manual compaction moved into the composer's session (gear) menu; a running
+  // compaction keeps its own row control, guarded only by isCompacting so it
+  // shows whether or not a turn is streaming.
   const controlBlock = chatInputSource.slice(
-    chatInputSource.indexOf("onClick={isCompacting ? onAbortCompaction : onCompact}") - 900,
-    chatInputSource.indexOf('aria-label={isCompacting ? t("chat.stopCompaction")'),
+    chatInputSource.indexOf("{onCompact && isCompacting && ("),
+    chatInputSource.indexOf('aria-label={t("chat.stopCompaction")}'),
   );
 
-  assert.match(controlBlock, /\{onCompact && \(!isStreaming \|\| isCompacting\) && \(/);
-  assert.doesNotMatch(controlBlock, /\{!isStreaming && onCompact && \(/);
-  // The "streaming but not compacting" state is now unreachable, so its disabled styling
-  // must be gone rather than left as dead branches.
-  assert.doesNotMatch(controlBlock, /isStreaming && !isCompacting/);
+  assert.ok(controlBlock.length > 0);
+  assert.doesNotMatch(controlBlock, /!isStreaming/);
+  assert.match(controlBlock, /onClick=\{onAbortCompaction\}/);
   assert.match(controlBlock, /cursor: "pointer"/);
+  // Starting one is offered only when nothing is running.
+  assert.match(chatInputSource, /const canCompactNow = Boolean\(onCompact && !isStreaming && !isCompacting\)/);
 });

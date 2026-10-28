@@ -4,6 +4,8 @@ import test from "node:test";
 import { createJiti } from "jiti";
 
 const source = readFileSync(new URL("./ChatInput.tsx", import.meta.url), "utf8");
+// The gear menu itself is fork-owned and lives outside ChatInput.
+const menuSource = readFileSync(new URL("./SessionAutomationMenu.tsx", import.meta.url), "utf8");
 
 const jiti = createJiti(import.meta.url, {
   jsx: { runtime: "automatic" },
@@ -42,12 +44,12 @@ test("automation gear exposes the four session-automation controls", () => {
   assert.match(html, /aria-label="Session automation"/);
   // Popover content renders in static markup (server render has no toggle state,
   // so assert the controls' labels exist inside the source popover markup).
-  assert.match(source, /t\("chat\.autoCompaction"\)/);
-  assert.match(source, /t\("chat\.autoRetry"\)/);
-  assert.match(source, /onSetAutomation\(\{ autoCompaction: e\.target\.checked \}\)/);
-  assert.match(source, /onSetAutomation\(\{ autoRetry: e\.target\.checked \}\)/);
-  assert.match(source, /onSetAutomation\(\{ steeringMode: mode \}\)/);
-  assert.match(source, /onSetAutomation\(\{ followUpMode: mode \}\)/);
+  assert.match(menuSource, /t\("chat\.autoCompaction"\)/);
+  assert.match(menuSource, /t\("chat\.autoRetry"\)/);
+  assert.match(menuSource, /onSetAutomation\(\{ autoCompaction: e\.target\.checked \}\)/);
+  assert.match(menuSource, /onSetAutomation\(\{ autoRetry: e\.target\.checked \}\)/);
+  assert.match(menuSource, /onSetAutomation\(\{ steeringMode: mode \}\)/);
+  assert.match(menuSource, /onSetAutomation\(\{ followUpMode: mode \}\)/);
 });
 
 test("automation gear stays hidden while values are unknown (new session)", () => {
@@ -62,15 +64,17 @@ test("server supports the automation command set end to end", () => {
   }
   assert.match(rpc, /steeringMode: this\.inner\.steeringMode/);
   assert.match(rpc, /followUpMode: this\.inner\.followUpMode/);
-  const hook = readFileSync(new URL("../hooks/useAgentSession.ts", import.meta.url), "utf8");
+  const hook = readFileSync(new URL("../hooks/useSessionAutomation.ts", import.meta.url), "utf8");
   assert.match(hook, /type: "set_auto_compaction", enabled: change\.autoCompaction/);
   assert.match(hook, /type: "set_steering_mode", mode: change\.steeringMode/);
 });
 
 test("narrow screens keep Stop one tap away while streaming", () => {
-  const block = source.slice(source.indexOf("Stop must stay one tap away"));
-  assert.ok(block.length > 0);
-  assert.match(block.slice(0, 1400), /isNarrow && isStreaming && !controlsMenuOpen/);
+  const html = render({ isStreaming: true });
+  assert.equal((html.match(/data-action="stop"/g) ?? []).length, 1);
+  assert.ok(html.indexOf('data-action="stop"') < html.indexOf('class="chat-composer-controls"'), "Stop stays in the editor, outside collapsed controls");
+  assert.match(html, /aria-label="Stop agent"/);
+  assert.doesNotMatch(html, /composer-stop-button/);
 });
 
 test("tool preset control dims instead of vanishing while streaming", () => {

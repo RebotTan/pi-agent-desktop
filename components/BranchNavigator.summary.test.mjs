@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const navigatorSource = await readFile(new URL("./BranchNavigator.tsx", import.meta.url), "utf8");
-const chatInputSource = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
-const hookSource = await readFile(new URL("../hooks/useAgentSession.ts", import.meta.url), "utf8");
-const themeSource = await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8");
+const navigatorSource = (await readFile(new URL("./BranchNavigator.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const chatInputSource = (await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const hookSource = (await readFile(new URL("../hooks/useAgentSession.ts", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const branchSummarySource = (await readFile(new URL("../hooks/useBranchSummary.ts", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const themeSource = (await readFile(new URL("../app/native-theme.css", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
 
 test("a plain click stays a plain switch; the summarized switch is its own action", () => {
   // Rows are also how branches are browsed, so asking on every click would get in the way.
@@ -19,8 +20,8 @@ test("a plain click stays a plain switch; the summarized switch is its own actio
 });
 
 test("the summary runs server-first, can be stopped, and holds the composer", () => {
-  assert.match(hookSource, /type: "navigate_tree",\s*targetId: leafId,\s*summarize: true,/);
-  assert.match(hookSource, /sendAgentCommand\(sid, \{ type: "abort_branch_summary" \}\)/);
+  assert.match(branchSummarySource, /type: "navigate_tree",\s*targetId: leafId,\s*summarize: true,/);
+  assert.match(branchSummarySource, /sendAgentCommand\(sid, \{ type: "abort_branch_summary" \}\)/);
   assert.match(hookSource, /agentRunningRef\.current \|\| bashRunningRef\.current \|\| branchSummaryHolds\(branchSummarySessionIdRef\.current, sessionIdRef\.current\)\) \{\s*restoreSubmission/);
   assert.match(chatInputSource, /\{branchSummaryPending && \([\s\S]*?chat\.branchSummarizing[\s\S]*?onClick=\{onAbortBranchSummary\}/);
 });

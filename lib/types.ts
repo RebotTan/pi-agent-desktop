@@ -389,6 +389,11 @@ export interface SessionInfo {
   path: string;
   id: string;
   cwd: string;
+  /** Server-classified workspace identity. Chats use the hidden Pi workspace
+   *  and are excluded from projects, worktrees, and project trust. */
+  workspaceKind?: SessionWorkspaceKind;
+  /** A chat that owns a folder of its own (set by the server; a legacy chat has none). */
+  chatFolder?: boolean;
   name?: string;
   created: string;
   modified: string;
@@ -431,6 +436,8 @@ export interface SessionInfo {
    *  has not been created yet. Disk-backed actions must wait until this clears. */
   transient?: boolean;
 }
+
+export type SessionWorkspaceKind = "project" | "chat";
 
 export interface SessionContext {
   messages: AgentMessage[];

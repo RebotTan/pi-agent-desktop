@@ -38,10 +38,10 @@
   "scripts": {
     "dev": "next dev -H 127.0.0.1 -p 30141",
     "web": "node scripts/web-dev.mjs",
-    "dev:lan": "node bin/network-exposure-warning.js 0.0.0.0 && next dev -H 0.0.0.0 -p 30141",
+    "dev:lan": "node scripts/lan-server.mjs dev",
     "build": "next build --webpack",
     "start": "next start -H 127.0.0.1 -p 30141",
-    "start:lan": "node bin/network-exposure-warning.js 0.0.0.0 && next start -H 0.0.0.0 -p 30141",
+    "start:lan": "node scripts/lan-server.mjs start",
     "desktop:dev": "node scripts/desktop-dev.mjs --config src-tauri/tauri.dev.conf.json",
     "desktop:prepare": "node scripts/prepare-desktop.mjs",
     "desktop:build": "npm run desktop:prepare && tauri build",
@@ -51,19 +51,21 @@
     "preview-runtime": "node scripts/build-preview-runtime.mjs",
     "desktop:verify": "node scripts/verify-packaged-codemode.mjs",
     "test:release-tools": "node --test scripts/*.test.mjs",
-    "test": "node --experimental-strip-types --test 'app/**/*.test.mjs' 'lib/**/*.test.mjs' 'scripts/**/*.test.mjs' 'components/**/*.test.mjs' 'hooks/**/*.test.mjs' 'public/**/*.test.mjs'",
+    "check:deps": "node scripts/check-installed-deps.mjs",
+    "pretest": "npm run check:deps",
+    "test": "node --experimental-strip-types --test --test-concurrency=4 \"app/**/*.test.mjs\" \"lib/**/*.test.mjs\" \"scripts/**/*.test.mjs\" \"components/**/*.test.mjs\" \"hooks/**/*.test.mjs\" \"public/**/*.test.mjs\"",
     "lint": "eslint . && npm run check:branding",
     "check:branding": "node --test lib/branding.test.mjs",
     "release": "npm version patch --no-git-tag-version && npm run build && npm publish --access public",
     "postinstall": "node bin/prepare-terminal.js",
     "test:terminal": "node e2e/terminal.mjs",
-    "test:e2e": "node e2e/run.mjs"
+    "test:e2e": "node e2e/conversation-navigator.mjs && node e2e/chat-prompt-anchor.mjs && node e2e/composer-outbox.mjs && node e2e/option-controls.mjs && node e2e/appearance.mjs && node e2e/settings-controls.mjs && node e2e/fonts.mjs && node e2e/streaming-markdown.mjs && node e2e/run.mjs"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "^1.2.0",
-    "@earendil-works/pi-ai": "^1.2.0",
-    "@earendil-works/pi-coding-agent": "^1.2.0",
-    "@earendil-works/pi-tui": "^1.2.0",
+    "@earendil-works/pi-agent-core": "^1.4.0",
+    "@earendil-works/pi-ai": "^1.4.0",
+    "@earendil-works/pi-coding-agent": "^1.4.0",
+    "@earendil-works/pi-tui": "^1.4.0",
     "@tauri-apps/api": "^2.12.1",
     "@tauri-apps/plugin-autostart": "^2.7.0",
     "@tauri-apps/plugin-clipboard-manager": "^2.4.1",
@@ -83,9 +85,11 @@
     "react-dom": "^19.2.4",
     "semver": "7.8.5",
     "undici": "8.11.0",
-    "web-push": "^3.6.7"
+    "web-push": "^3.6.7",
+    "@radix-ui/react-select": "^2.3.8"
   },
   "devDependencies": {
+    "@lobehub/streamdown": "1.4.1",
     "@tailwindcss/browser": "4.2.2",
     "@tailwindcss/postcss": "^4.2.2",
     "@tauri-apps/cli": "^2.12.1",
@@ -120,6 +124,9 @@
     "typescript": "^5"
   },
   "overrides": {
-    "katex": "$katex"
+    "katex": "$katex",
+    "mammoth": {
+      "argparse": "^2.0.1"
+    }
   }
 }

@@ -332,18 +332,6 @@
 .sidebar-project-context-menu button:hover {
   background: var(--bg-hover);
 }
-.settings-entry-menu {
-  width: 184px;
-}
-.settings-entry-menu button {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.settings-entry-menu button:disabled {
-  opacity: 0.4;
-  cursor: default;
-}
 .sidebar-project-context-menu-back {
   color: var(--text-muted) !important;
 }
@@ -381,6 +369,113 @@
   margin-left: auto;
   color: var(--accent);
   animation: spin 0.8s linear infinite;
+}
+/* Worktree pages of the project menu: switch / remove rows, the confirm
+   strip, the new-worktree form and the fetch row. */
+.sidebar-project-context-menu--wide {
+  width: 240px;
+}
+.sidebar-project-context-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.sidebar-project-context-menu-row > button[role="menuitem"] {
+  flex: 1;
+  min-width: 0;
+}
+.sidebar-project-context-menu-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-project-context-menu .worktree-remove-button {
+  display: flex;
+  flex: 0 0 28px;
+  width: 28px;
+  height: 28px;
+  margin-right: 0;
+  padding: 0;
+}
+.sidebar-project-context-menu .sidebar-project-context-menu-fetch {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+.sidebar-project-context-menu .sidebar-project-context-menu-fetch:disabled {
+  cursor: default;
+}
+.sidebar-project-context-menu-confirm {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--danger) 6%, transparent);
+  color: var(--text);
+  font-size: var(--fs-caption);
+}
+.sidebar-project-context-menu-form {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 2px 6px 6px;
+}
+.sidebar-project-context-menu-form input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 8px;
+  border: var(--hairline) solid var(--accent);
+  border-radius: 5px;
+  outline: none;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+}
+.sidebar-project-context-menu-confirm-actions {
+  display: flex;
+  gap: 6px;
+}
+.sidebar-project-context-menu .sidebar-project-context-menu-confirm-actions button {
+  flex: 1;
+  padding: 4px 0;
+  border: var(--hairline) solid var(--border);
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  text-align: center;
+}
+.sidebar-project-context-menu .sidebar-project-context-menu-confirm-actions .sidebar-project-context-menu-danger {
+  border-color: transparent;
+  background: var(--danger);
+  color: #fff;
+  font-weight: 600;
+}
+.sidebar-project-context-menu .sidebar-project-context-menu-confirm-actions .sidebar-project-context-menu-primary {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--accent-contrast);
+  font-weight: 600;
+}
+.sidebar-project-context-menu .sidebar-project-context-menu-confirm-actions button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+/* .native-popover greys every hovered button (!important); keep the filled
+   Create / Remove buttons filled so they do not look switched off. */
+.sidebar-project-context-menu .sidebar-project-context-menu-confirm-actions .sidebar-project-context-menu-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 86%, var(--bg)) !important;
+  color: var(--accent-contrast) !important;
+}
+.sidebar-project-context-menu .sidebar-project-context-menu-confirm-actions .sidebar-project-context-menu-danger:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--danger) 86%, var(--bg)) !important;
+  color: #fff !important;
+}
+.sidebar-project-context-menu-hint.sidebar-project-context-menu-error {
+  color: var(--danger);
+  overflow-wrap: anywhere;
 }
 .sidebar-project-tree-empty {
   padding: 24px 16px;
@@ -529,12 +624,11 @@
   }
 }
 
-/* While the agent or a bash command is running, fork/navigate actions on user
-   messages are inert (the handlers early-return) — hide them here instead of
-   toggling their props, so MessageView memoization survives busy transitions. */
-.chat-window[data-session-busy="true"] .user-msg-actions {
-  opacity: 0 !important;
-  pointer-events: none !important;
+/* While the session is busy, in-session edit branches must wait. Keep the
+   action visible and disabled (MessageView supplies the reason) so users do
+   not lose the affordance; fork stays available during ordinary agent runs. */
+.chat-window[data-session-busy="true"] .user-msg-actions button:disabled {
+  opacity: 0.48;
 }
 
 /* ---- from settings.css --------------------------------------------------- */
@@ -604,6 +698,88 @@
 
 .settings-general-tagline:first-child {
   color: var(--text);
+}
+
+/* A quiet overview card keeps the product summary from reading as an
+   unlabeled twin of the Version & Updates section below it. */
+.settings-general-overview {
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--bg-panel);
+}
+
+/* Keyboard reference: a small command panel that stays light enough to open
+   repeatedly while learning the app. */
+.shortcut-help-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 750;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(16, 16, 18, 0.24);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+}
+
+.shortcut-help-dialog {
+  width: min(430px, 100%);
+  max-height: min(520px, calc(100dvh - 48px));
+  overflow: auto;
+  padding: 16px;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-dialog);
+}
+
+.shortcut-help-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  color: var(--text);
+  font-size: var(--fs-title);
+}
+
+.shortcut-help-list {
+  display: grid;
+  margin: 0;
+}
+
+.shortcut-help-list > div {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr);
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 0;
+  border-bottom: var(--hairline) solid var(--separator);
+}
+
+.shortcut-help-list > div:last-child {
+  border-bottom: none;
+}
+
+.shortcut-help-list kbd {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 1px 6px;
+  border: var(--hairline) solid var(--border);
+  border-radius: 5px;
+  background: var(--bg-subtle);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  white-space: nowrap;
+}
+
+.shortcut-help-list dd {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-body);
 }
 
 /* Version card: current and latest release side by side with the update
@@ -701,9 +877,7 @@
    whose rows are split by hairlines (theme, chat, language, desktop), instead
    of a mix of loose rows, per-row cards and 420px-capped blocks. */
 .settings-option-list,
-.settings-chat-options,
-.settings-language-options,
-.settings-theme-options {
+.settings-chat-options {
   width: 100%;
   max-width: none;
   background: var(--bg-panel);
@@ -755,13 +929,10 @@
 .settings-language-options {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 3px;
-  padding: 3px;
 }
 
 .settings-language-option {
   justify-content: center;
-  height: 40px;
 }
 
 .settings-language-radio,
@@ -772,11 +943,6 @@
 .settings-language-label {
   flex: 0 1 auto;
   text-align: center;
-}
-
-.settings-language-option[aria-checked="true"] {
-  color: var(--accent);
-  font-weight: 600;
 }
 
 .settings-shell-option {
@@ -807,16 +973,24 @@
 
 .settings-option-action {
   flex-shrink: 0;
+  align-self: center;
 }
 
-.settings-option-list + .settings-option-action {
+.settings-action-group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-option-list + .settings-option-action,
+.settings-option-list + .settings-action-group {
   margin-top: 10px;
 }
 
 .settings-choice-group {
   display: flex;
   flex-shrink: 0;
-  gap: 6px;
 }
 
 .settings-chat-choice-option {
@@ -832,56 +1006,56 @@
 :root {
   color-scheme: light;
 
-  /* Native-inspired semantic colors. Keep the canvas warm and reserve pure
-     white for controls and elevated content. */
-  --bg: #f6f6f7;
-  --bg-panel: rgba(242, 242, 244, 0.92);
-  --bg-hover: rgba(29, 29, 31, 0.055);
-  --bg-selected: rgba(29, 29, 31, 0.08);
-  --border: rgba(60, 60, 67, 0.16);
-  --separator: rgba(60, 60, 67, 0.12);
+  /* Light/dark palette and default background, mapped to Pi's existing roles.
+     Palette attribution and license: public/THIRD_PARTY_NOTICES.txt.
+     Small labels use a darker shade of the same gray so
+     they stay readable on selected rows and the tinted sidebar. */
+  --bg: #eceef4;
+  --bg-panel: #eceef4;
+  --bg-hover: rgba(0, 0, 0, 0.04);
+  --bg-selected: rgba(0, 0, 0, 0.07);
+  --sidebar-selected: #ffffff;
+  --border: rgba(0, 0, 0, 0.07);
+  --separator: rgba(0, 0, 0, 0.06);
   --surface: #ffffff;
-  /* The reading surface shared by the topbar, chat and right panel. Light: the
-     white content canvas next to the recessed sidebar. Dark: the deepest tone,
-     with the sidebar and floating surfaces a step lighter (Apple's order). */
+  /* Card colors form Pi's continuous reading surface. */
   --workbench-bg: #ffffff;
   --surface-muted: rgba(255, 255, 255, 0.64);
   --surface-elevated: #ffffff;
   --text: #1d1d1f;
-  /* #66666b rather than #68686d: the old value measured 4.42:1 on the
-     --bg-selected overlay, just under the 4.5:1 AA floor for body text. */
-  --text-muted: #66666b;
-  /* #7a7a7a rather than the visually lighter #94949a: text-dim carries real
-     labels (timestamps, code-block language tags), and #94949a only cleared
-     ~2.8:1 contrast against --bg — under the 3:1 floor for UI text. This
-     hits ~4:1 while staying visibly de-emphasized next to --text-muted. */
-  --text-dim: #7a7a7a;
-  /* #707075 rather than #85858b: 10px footnotes at 3.45:1 were under the 4.5:1 floor. */
-  --text-meta: #707075;
+  --text-muted: #60606b;
+  --text-dim: #73737e;
+  --text-meta: #60606b;
   --accent: #1d1d1f;
   --accent-hover: #3a3a3c;
   --accent-contrast: #ffffff;
   --accent-soft: rgba(29, 29, 31, 0.08);
   --accent-border: rgba(29, 29, 31, 0.22);
-  --focus-ring: rgba(29, 29, 31, 0.25);
-  --danger: #d92d20;
-  --success: #248a3d;
-  --warning: #b87503;
-  --user-bg: rgba(29, 29, 31, 0.06);
+  --menu-selection-color: #3b6cf6;
+  --focus-ring: rgba(59, 108, 246, 0.55);
+  --selection: rgba(59, 108, 246, 0.22);
+  --danger: #d93a35;
+  --success: #22863a;
+  --warning: #a5680d;
+  --info: #315bd2;
+  --user-bg: rgba(0, 0, 0, 0.045);
   --assistant-bg: transparent;
-  --tool-bg: rgba(118, 118, 128, 0.08);
-  --bg-subtle: rgba(60, 60, 67, 0.055);
-  --scroll-thumb: rgba(60, 60, 67, 0.25);
+  --tool-bg: rgba(0, 0, 0, 0.04);
+  --bg-subtle: rgba(0, 0, 0, 0.04);
+  --scroll-thumb: rgba(110, 110, 120, 0.3);
 
   /* Typography. "Noto Sans SC" backstops CJK on Linux builds (deb target in
      release.yml), which this stack otherwise has no CJK fallback for once it
      falls past the macOS/Windows-only names above it. */
-  --font-ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
-    "Segoe UI Variable", "Segoe UI", "Microsoft YaHei", "Noto Sans SC",
-    sans-serif;
-  --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display",
+  --font-ui-default: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
+    "Segoe UI Variable", "Segoe UI", "Microsoft YaHei", system-ui,
+    "Noto Sans SC", sans-serif;
+  --font-ui: var(--font-ui-default);
+  --font-display-default: -apple-system, BlinkMacSystemFont, "SF Pro Display",
     "PingFang SC", "Segoe UI Variable Display", "Segoe UI", "Noto Sans SC",
     sans-serif;
+
+  --font-display: var(--font-display-default);
 
   /* Shape, spacing and elevation */
   --radius-sm: 6px;
@@ -903,36 +1077,38 @@
 
 html.dark {
   color-scheme: dark;
-  --bg: #1c1c1e;
-  --bg-panel: rgba(36, 36, 38, 0.94);
-  --bg-hover: rgba(255, 255, 255, 0.075);
-  --bg-selected: rgba(255, 255, 255, 0.12);
-  --border: rgba(235, 235, 245, 0.15);
-  --separator: rgba(235, 235, 245, 0.1);
-  --surface: #252527;
-  --workbench-bg: #1c1c1e;
-  --surface-muted: rgba(44, 44, 46, 0.72);
-  --surface-elevated: #2c2c2e;
-  --text: #f5f5f7;
-  --text-muted: rgba(235, 235, 245, 0.64);
-  /* 0.46 rather than 0.38: matches the light-theme text-dim bump above so
-     both themes land at roughly the same ~4:1 contrast against --bg. */
-  --text-dim: rgba(235, 235, 245, 0.46);
-  --text-meta: rgba(235, 235, 245, 0.44);
-  --accent: #f5f5f7;
+  --bg: #141418;
+  --bg-panel: #141418;
+  --bg-hover: rgba(255, 255, 255, 0.05);
+  --bg-selected: rgba(255, 255, 255, 0.10);
+  --sidebar-selected: rgba(255, 255, 255, 0.10);
+  --border: rgba(255, 255, 255, 0.08);
+  --separator: rgba(255, 255, 255, 0.07);
+  --surface: #232328;
+  --workbench-bg: #232328;
+  --surface-muted: rgba(35, 35, 40, 0.72);
+  --surface-elevated: #232327;
+  --text: #ececf0;
+  --text-muted: #a9a9b4;
+  --text-dim: #83838f;
+  --text-meta: #a9a9b4;
+  --accent: #ececf0;
   --accent-hover: #ffffff;
-  --accent-contrast: #1d1d1f;
+  --accent-contrast: #161618;
   --accent-soft: rgba(245, 245, 247, 0.14);
   --accent-border: rgba(245, 245, 247, 0.3);
-  --focus-ring: rgba(245, 245, 247, 0.32);
+  --menu-selection-color: #6b93ff;
+  --focus-ring: rgba(107, 147, 255, 0.65);
+  --selection: rgba(107, 147, 255, 0.3);
   --danger: #ff6961;
-  --success: #30d158;
-  --warning: #ffd60a;
-  --user-bg: rgba(255, 255, 255, 0.09);
+  --success: #4fd17a;
+  --warning: #f0a33a;
+  --info: #6b93ff;
+  --user-bg: rgba(255, 255, 255, 0.07);
   --assistant-bg: transparent;
-  --tool-bg: rgba(255, 255, 255, 0.055);
-  --bg-subtle: rgba(255, 255, 255, 0.055);
-  --scroll-thumb: rgba(235, 235, 245, 0.25);
+  --tool-bg: rgba(255, 255, 255, 0.06);
+  --bg-subtle: rgba(255, 255, 255, 0.06);
+  --scroll-thumb: rgba(169, 169, 180, 0.3);
   --shadow-control: 0 1px 2px rgba(0, 0, 0, 0.24);
   --shadow-composer: 0 1px 2px rgba(0, 0, 0, 0.28),
     0 14px 36px rgba(0, 0, 0, 0.3);
@@ -942,20 +1118,8 @@ html.dark {
     0 4px 18px rgba(0, 0, 0, 0.36);
 }
 
-/* Text selection and keyboard focus follow the system accent color, as AppKit
-   does; the monochrome --accent stays the brand color for buttons and fills.
-   AccentColor resolves to the user's System Settings accent in WKWebView, and
-   browsers without it keep the neutral values above. The query names
-   color-mix as well: a custom property holding an unsupported color-mix() is
-   invalid only when it is used, which would drop the focus outline entirely
-   instead of falling back. */
-@supports (color: color-mix(in srgb, AccentColor 50%, transparent)) {
-  :root,
-  html.dark {
-    --focus-ring: color-mix(in srgb, AccentColor 55%, transparent);
-    --selection: color-mix(in srgb, AccentColor 35%, transparent);
-  }
-}
+/* Selection and focus use the same blue in every platform/theme.
+   The primary action retains a neutral foreground/background pair. */
 
 /* Keep the conversation navigator visually compact: its markers cluster at
    the viewport midpoint while retaining a forgiving invisible scrub target. */
@@ -1048,8 +1212,21 @@ html.dark {
   transform: translateY(-50%);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  pointer-events: none;
+  /* A button: clicking the card jumps to its turn (#130). It overlaps the
+     track by 2px, so the pointer reaches it without leaving the navigator. */
+  display: block;
+  margin: 0;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  pointer-events: auto;
   animation: conversation-navigator-preview-in 140ms var(--ease-native);
+  transition: border-color 120ms ease;
+}
+
+.conversation-navigator-preview:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--separator));
 }
 
 html.dark .conversation-navigator-preview {
@@ -1574,6 +1751,7 @@ select {
    matches the inline lineHeight: 1.6 on .chat-input-textarea. */
 .chat-input-textarea::placeholder {
   line-height: 1.6;
+  color: var(--text-dim);
 }
 
 button:focus-visible,
@@ -1608,8 +1786,15 @@ a:focus-visible {
 }
 
 :root {
-  --font-mono: ui-monospace, "SFMono-Regular", var(--font-noto-mono),
-    "Cascadia Code", "JetBrains Mono", "Fira Code", Consolas, monospace;
+  /* Native monospace first. The bundled Noto Sans Mono is only a last-resort
+     Latin fallback: WebView2 (Chromium) has no `ui-monospace`, so listing it
+     before Cascadia/Consolas made it win on Windows. The CJK names keep
+     Chinese in code on a proportional-CJK face instead of the browser default
+     (SimSun on Windows). */
+  --font-mono-default: ui-monospace, "SFMono-Regular", "Cascadia Code",
+    "JetBrains Mono", "Fira Code", Consolas, var(--font-noto-mono, ui-monospace),
+    "PingFang SC", "Microsoft YaHei", "Noto Sans SC", monospace;
+  --font-mono: var(--font-mono-default);
 }
 
 pre, code {
@@ -1621,27 +1806,31 @@ pre, code {
 /* -------------------------------------------------------------------------- */
 
 .app-shell {
-  background:
-    radial-gradient(circle at 55% -30%, color-mix(in srgb, var(--accent) 4%, transparent), transparent 46%),
-    var(--bg);
+  background: var(--bg);
+  background: var(--canvas-background);
 }
 
 .app-sidebar {
   background: var(--bg-panel) !important;
+  background: var(--canvas-background) !important;
   border-right: var(--hairline) solid var(--separator) !important;
   -webkit-backdrop-filter: saturate(130%) blur(24px);
   backdrop-filter: saturate(130%) blur(24px);
 }
 
+/* No top padding: the header opens with the 48px .sidebar-controls-row, which
+   must share the 48px topbar's centre line. An 8px pad here pushed the theme
+   and collapse buttons below the topbar's chips on Windows/Linux (#129). */
 .session-sidebar-header {
-  padding: 8px 6px 4px !important;
+  padding: 0 6px 4px !important;
   border-bottom: 0 !important;
 }
 
 /* On macOS (titleBarStyle: Overlay) the native traffic lights float over the
    sidebar's top-left. Keep the sidebar's own 48px chrome row flush with the
    window top: padding it down made the right-hand menu sit below the lights'
-   24px centre line. The rows below already clear the 16px-tall buttons. */
+   24px centre line. The rows below already clear the 16px-tall buttons.
+   (Now also the base rule's value; kept so the macOS intent stays explicit.) */
 .session-sidebar-header--mac-inset {
   padding-top: 0 !important;
 }
@@ -1758,7 +1947,6 @@ pre, code {
   transition: opacity 140ms ease, background 140ms ease, color 140ms ease;
 }
 
-.sidebar-folder-row:hover .sidebar-refresh-button,
 .sidebar-refresh-button:focus-visible,
 .sidebar-refresh-button.is-done {
   opacity: 1;
@@ -1920,6 +2108,24 @@ html.dark .sidebar-view-switcher-thumb {
   min-height: 0;
 }
 
+.sidebar-project-timeline {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  padding: 2px 0 8px;
+}
+
+.session-item-project {
+  max-width: 34%;
+  flex: 0 1 auto;
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: var(--fs-small);
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sidebar-project-tree-header {
   display: flex;
   align-items: center;
@@ -1940,11 +2146,62 @@ html.dark .sidebar-view-switcher-thumb {
   color: var(--text-dim);
 }
 
+.sidebar-chats-header {
+  margin-top: 2px;
+}
+
+/* The section title doubles as the fold toggle, like a project row. */
+.sidebar-chats-title {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.sidebar-chats-title .sidebar-project-tree-title {
+  flex: 0 1 auto;
+}
+
+.sidebar-chats-title:hover .sidebar-project-tree-title {
+  color: var(--text-muted);
+}
+
+.sidebar-project-tree-add:disabled {
+  cursor: default;
+  opacity: 0.4;
+}
+
+.sidebar-chats-empty {
+  padding: 3px 10px 6px 31px;
+  color: var(--text-dim);
+  font-size: var(--fs-small);
+  line-height: 1.4;
+}
+
 .sidebar-project-tree-tools {
   display: flex;
   align-items: center;
   gap: 2px;
   flex: 0 0 auto;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 100ms ease;
+}
+
+.sidebar-project-tree-header:hover .sidebar-project-tree-tools,
+.sidebar-project-tree-header.is-menu-open .sidebar-project-tree-tools,
+.sidebar-project-tree-header:focus-within .sidebar-project-tree-tools {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .sidebar-project-tree-menu,
@@ -1963,10 +2220,61 @@ html.dark .sidebar-view-switcher-thumb {
   transition: background 120ms ease, color 120ms ease;
 }
 
+@media (hover: none) {
+  .sidebar-project-tree-tools {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
 .sidebar-project-tree-menu:hover,
-.sidebar-project-tree-add:hover {
+.sidebar-project-tree-add:hover,
+.sidebar-project-tree-menu.is-open {
   background: var(--bg-hover);
   color: var(--text);
+}
+
+.project-view-menu {
+  position: fixed;
+  z-index: 1000;
+  display: flex;
+  width: 216px;
+  padding: 5px;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.project-view-menu-heading {
+  padding: 5px 8px 4px;
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+}
+
+.project-view-menu button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  padding: 0 8px;
+  text-align: left;
+}
+
+.project-view-menu button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.project-view-menu-check {
+  width: 14px;
+  flex: 0 0 14px;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.project-view-menu-separator {
+  height: var(--hairline);
+  margin: 4px 6px;
+  background: var(--separator);
 }
 
 .sidebar-project-tree-menu-popover .sidebar-project-tree-menu-item {
@@ -2280,6 +2588,14 @@ html.dark .sidebar-view-switcher-thumb {
   border-radius: 8px;
 }
 
+/* Session rows are treeitems, but the native div does not expose a focus
+   ring through a label. Keep keyboard traversal visible without displacing
+   the compact row. */
+.session-item:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: -2px;
+}
+
 /* Border blends into the selected background — no darker accent ring */
 .session-item.is-selected {
   background: var(--bg-selected) !important;
@@ -2296,7 +2612,11 @@ html.dark .sidebar-view-switcher-thumb {
 /* Secondary sidebar text (timestamps, counts, section label) sat at ~3.9:1 on
    the panel; scoped here so the global --text-dim keeps its role elsewhere. */
 html:not(.dark) .app-sidebar {
-  --text-dim: #6c6c71;
+  --text-dim: var(--text-muted);
+}
+
+.app-sidebar .session-item.is-selected {
+  background: var(--sidebar-selected) !important;
 }
 
 /* On the selection fill the timestamp measured 3.8:1; the inline color on the
@@ -2786,7 +3106,7 @@ html:not(.dark) .session-item.is-selected .session-item-time {
    on whichever 48px row currently owns the window's top-left corner: the top
    bar while the sidebar is hidden, the file panel's tab strip while it covers
    the window (full width, or the mobile-width layout). The lights end at
-   14 + 2 x 20 + 12 = 66pt (MAC_TRAFFIC_LIGHT_X in src-tauri/src/lib.rs); the
+   14 + 2 x 20 + 12 = 66pt (MAC_TRAFFIC_LIGHT_X in src-tauri/src/shell/window.rs); the
    rest is a gap so a filled chip (the active file tab) does not touch them.
    The sidebar header keeps its own layout: its controls row is right-aligned. */
 :root {
@@ -2838,6 +3158,12 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   margin-right: 8px;
   align-items: center !important;
   gap: 1px;
+}
+
+/* Only the first trailing group absorbs free space. A second auto margin on
+   Windows/Linux would strand the chat actions in the middle of the title bar. */
+.app-topbar > :is(.app-topbar-actions, .main-file-toggle) ~ .window-controls {
+  margin-left: 12px;
 }
 
 /* Wrapper divs (BranchNavigator, More menu anchor) must center their 28px
@@ -2969,16 +3295,427 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   color: var(--text) !important;
 }
 
-/* Project picker entries render as flush rows separated by divider lines
-   instead of individually rounded pills. */
-.native-popover button.project-picker-option {
-  border-radius: 0 !important;
+/* Project choices use the same inset rows as every other option menu. */
+.app-menu button.project-picker-option {
+  min-height: var(--menu-row-height);
+  border-radius: var(--menu-row-radius) !important;
+  border-bottom-color: transparent !important;
 }
 
 .native-popover input:not([type="checkbox"]):not([type="radio"]) {
   border-color: var(--separator) !important;
   border-radius: 7px !important;
   background: var(--surface-muted) !important;
+}
+
+/* One menu surface for settings, topbar actions and composer selectors. */
+:root {
+  /* Choice geometry: Settings' inset/radius, Config's separation. */
+  --choice-inset: 8px;
+  --choice-row-gap: 4px;
+  --choice-row-radius: 5px;
+  --segment-inset: var(--choice-row-gap);
+  --segment-gap: var(--choice-row-gap);
+  --segment-radius: calc(var(--choice-row-radius) + var(--segment-inset));
+  --segment-selected: var(--surface-elevated);
+  --menu-radius: calc(var(--choice-row-radius) + var(--choice-inset) + 1px);
+  --menu-inset: var(--choice-inset);
+  --menu-row-radius: var(--choice-row-radius);
+  --menu-row-height: 34px;
+  --menu-row-gap: var(--choice-row-gap);
+  --menu-focus-ring: var(--text);
+}
+
+html.dark {
+  --segment-selected: color-mix(in srgb, var(--surface-elevated) 90%, white);
+}
+
+/* Config lists share menu geometry, including selected + adjacent hover.
+   The same blocks serve Agents, Models, Skills, Plugins and MCP. */
+.config-sidebar-list,
+.config-sidebar-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-row-gap);
+}
+
+.config-sidebar-list { padding: var(--choice-inset); }
+.config-sidebar-group { margin: 0; }
+.config-sidebar-group + .config-sidebar-group { margin-top: var(--choice-inset); }
+.config-sidebar-group-label { padding-inline: 10px; }
+.config-sidebar-item,
+.config-list-action-button {
+  position: relative;
+  flex-shrink: 0;
+  height: auto;
+  min-height: 34px;
+  padding-block: 6px;
+  border-radius: var(--choice-row-radius);
+}
+.config-sidebar-item:not(.models-sidebar-indented-item) { padding-inline: 10px; }
+.config-list-action { padding: var(--choice-inset); }
+.config-list-action-button { padding-inline: 10px; }
+.config-sidebar-item[aria-current="page"],
+.config-list-action-button[aria-current="page"],
+.config-sidebar-item[aria-current="page"]:not(:disabled):hover,
+.config-list-action-button[aria-current="page"]:not(:disabled):hover {
+  background: var(--bg-selected);
+  color: var(--text);
+  font-weight: 600;
+}
+.config-sidebar-item[aria-current="page"]::before,
+.config-list-action-button[aria-current="page"]::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  top: calc(50% - 8px);
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--menu-selection-color);
+}
+.config-sidebar-item:focus-visible,
+.config-list-action-button:focus-visible {
+  outline: 2px solid var(--menu-focus-ring);
+  outline-offset: -2px;
+}
+
+/* One compact segmented control: tight, even inset; concentric corners;
+   a soft raised selection rather than another dark block inside a gray one. */
+:is(.settings-theme-options, .settings-language-options, .settings-send-mode-options,
+    .settings-choice-group, .config-scope-switch, .file-viewer-mode-switch) {
+  height: auto;
+  padding: var(--segment-inset);
+  gap: var(--segment-gap);
+  border: 0;
+  border-radius: var(--segment-radius);
+  background: var(--bg-hover);
+  overflow: visible;
+}
+:is(.settings-theme-options, .settings-language-options, .settings-send-mode-options,
+    .settings-choice-group, .config-scope-switch, .file-viewer-mode-switch) > :is(label, button) {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: auto;
+  min-height: var(--control-height);
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--choice-row-radius);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  font-weight: 400;
+  line-height: 20px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+:is(.settings-theme-options, .settings-language-options, .settings-send-mode-options,
+    .settings-choice-group, .config-scope-switch, .file-viewer-mode-switch) > :is(label, button):not(:disabled, [aria-checked="true"], [aria-pressed="true"], :has(input:checked)):hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+:is(.settings-theme-options, .settings-language-options, .settings-send-mode-options,
+    .settings-choice-group, .config-scope-switch, .file-viewer-mode-switch) > :is([aria-checked="true"], [aria-pressed="true"], :has(input:checked)) {
+  background: var(--segment-selected);
+  box-shadow: var(--shadow-control);
+  color: var(--text);
+  font-weight: 600;
+}
+:is(.settings-theme-options, .settings-language-options, .settings-send-mode-options,
+    .settings-choice-group, .config-scope-switch, .file-viewer-mode-switch) > :is(:focus-visible, :has(input:focus-visible)) {
+  outline: 2px solid var(--menu-focus-ring);
+  outline-offset: -2px;
+}
+.config-scope-switch.is-small { border-radius: var(--segment-radius); }
+.config-scope-switch .config-scope-switch-option { border: 0; }
+.config-scope-switch.is-small .config-scope-switch-option {
+  min-height: 24px;
+  padding: 2px 10px;
+  color: var(--text-muted);
+}
+.config-scope-switch.is-small .config-scope-switch-option[aria-pressed="true"] { color: var(--text); }
+@media (pointer: coarse) {
+  .config-sidebar-item,
+  .config-list-action-button,
+  .config-scope-switch.is-small .config-scope-switch-option,
+  :is(.settings-theme-options, .settings-language-options, .settings-send-mode-options,
+      .settings-choice-group, .config-scope-switch, .file-viewer-mode-switch) > :is(label, button) { min-height: 44px; }
+}
+
+.app-menu {
+  padding: var(--menu-inset) !important;
+  max-width: calc(100vw - 16px);
+  border: 1px solid var(--separator) !important;
+  border-radius: var(--menu-radius) !important;
+  background: var(--surface-elevated) !important;
+  color: var(--text);
+  box-shadow: var(--shadow-popover) !important;
+  backdrop-filter: none;
+}
+
+/* A single padded surface owns the inset; scroll wrappers add none. */
+.app-menu-list {
+  min-height: 0;
+  overflow-y: auto;
+  padding: 0;
+}
+
+.app-menu :is(button[role="menuitem"], button[role="menuitemcheckbox"], button[role="menuitemradio"], button[role="option"]) {
+  min-height: var(--menu-row-height);
+  border-radius: var(--menu-row-radius) !important;
+  color: var(--text);
+  font-size: var(--fs-small);
+  line-height: 1.4;
+}
+
+.app-menu :is(button[role="menuitem"], button[role="menuitemcheckbox"], button[role="menuitemradio"]) {
+  padding: 8px 10px;
+}
+
+.app-menu :is(button[role="menuitem"], button[role="menuitemcheckbox"], button[role="menuitemradio"], button[role="option"]):focus-visible {
+  outline: 2px solid var(--menu-focus-ring) !important;
+  outline-offset: -2px;
+  background: var(--bg-hover) !important;
+}
+
+.app-menu .app-option-row {
+  border-radius: var(--menu-row-radius);
+}
+
+.app-menu .app-option-row[data-selected] {
+  background: var(--bg-selected) !important;
+}
+
+.app-menu .app-option-row:not([data-selected]):hover {
+  background: var(--bg-hover) !important;
+}
+
+/* Match the Settings navigation pill; focus/hover never imply selection. */
+.app-menu :is(
+  .app-option-row[data-selected],
+  .app-select-option[data-state="checked"],
+  [role="menuitemradio"][aria-checked="true"],
+  [role="menuitemcheckbox"][aria-checked="true"],
+  .app-menu-option[aria-selected="true"],
+  .composer-menu-row[data-active="true"],
+  button[aria-current="true"]
+) {
+  position: relative;
+  background: var(--bg-selected) !important;
+}
+.app-menu :is(
+  .app-option-row[data-selected],
+  .app-select-option[data-state="checked"],
+  [role="menuitemradio"][aria-checked="true"],
+  [role="menuitemcheckbox"][aria-checked="true"],
+  .app-menu-option[aria-selected="true"],
+  .composer-menu-row[data-active="true"],
+  button[aria-current="true"]
+)::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--menu-selection-color);
+  transform: translateY(-50%);
+  pointer-events: none;
+}
+
+.app-menu .app-default-star {
+  width: 32px !important;
+  height: 32px !important;
+  right: 2px !important;
+  border: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: var(--text-muted);
+}
+.app-menu .app-default-star:hover,
+.app-menu .app-default-star.is-default { color: var(--menu-selection-color); }
+.app-menu .app-default-star:focus:not(:focus-visible) { outline: none; }
+.app-menu .app-default-star:focus-visible {
+  outline: 2px solid var(--menu-focus-ring);
+  outline-offset: -2px;
+}
+@media (pointer: coarse) {
+  .app-menu .app-default-star { width: 44px !important; height: 44px !important; }
+  .app-menu .app-option-row:has(.app-default-star) > [role="option"] { padding-right: 50px !important; }
+}
+
+.app-menu .app-option-row > button[role="option"] {
+  color: var(--text) !important;
+  font-weight: 500 !important;
+}
+
+.app-menu .app-option-row[data-selected] > button[role="option"] {
+  font-weight: 600 !important;
+}
+
+.app-menu button:not(.branch-summary-action):not(.branch-summary-confirm) {
+  border-radius: var(--menu-row-radius) !important;
+}
+
+/* Separate the painted rows, including a checked row next to a hovered one.
+   Space the SelectorRow wrapper, not its option/default-star buttons. Scope
+   this to flat choices so tree guides and horizontal form actions stay intact. */
+.app-menu :where(
+  .app-option-row,
+  .wt-row,
+  .sidebar-project-context-menu-row,
+  .app-select-option,
+  .app-menu-option,
+  .project-picker-option,
+  [role="menuitemradio"],
+  [role="menuitem"],
+  [role="menuitemcheckbox"],
+  .app-suggestion-menu button
+):not(:first-child) {
+  margin-block-start: var(--menu-row-gap) !important;
+}
+
+.app-menu .wt-row { border-bottom: 0 !important; }
+
+/* Grid completions and flex suggestion lists use gap instead of row margins,
+   so columns stay aligned and an existing gap cannot double the spacing. */
+.app-menu .app-menu-items { gap: var(--menu-row-gap) !important; }
+.app-menu .app-menu-items > * { margin-block-start: 0 !important; }
+.app-menu.project-view-menu { gap: 0; }
+
+.app-select-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  min-height: var(--control-height);
+  padding: 6px 9px;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-muted);
+  color: var(--text);
+  font: inherit;
+  font-size: var(--fs-small);
+  line-height: 1.4;
+  text-align: start;
+  cursor: pointer;
+}
+.app-select-trigger > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.app-select-trigger:focus-visible {
+  outline: 2px solid var(--menu-focus-ring) !important;
+  outline-offset: 2px;
+}
+.app-select-trigger[aria-invalid="true"] { border-color: var(--danger); }
+.app-select-trigger:disabled { opacity: 0.5; cursor: default; }
+.app-select-trigger:hover:not(:disabled),
+.app-select-trigger[data-state="open"] { background: var(--bg-hover); }
+.app-select-chevron { display: inline-flex; flex: none; color: var(--text-muted); }
+.app-select-menu {
+  z-index: 2400;
+  min-width: min(var(--radix-select-trigger-width, 120px), calc(100vw - 16px));
+  max-width: min(440px, var(--radix-select-content-available-width, calc(100vw - 16px)));
+  max-height: min(360px, var(--radix-select-content-available-height, calc(100dvh - 16px)));
+  overflow: hidden;
+}
+.app-select-menu:not(.animated-native-popover) {
+  transform-origin: var(--radix-select-content-transform-origin, bottom center) !important;
+}
+.app-select-viewport { min-height: 0; overscroll-behavior: contain; scrollbar-width: thin !important; }
+.app-select-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: var(--menu-row-height);
+  padding: 8px 10px;
+  border-radius: var(--menu-row-radius);
+  color: var(--text);
+  font-size: var(--fs-small);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  cursor: default;
+  outline-offset: -2px;
+}
+.app-select-option[data-state="checked"] { background: var(--bg-selected); font-weight: 600; }
+.app-select-option[data-highlighted] { background: var(--bg-hover); }
+.app-select-option:focus-visible { outline: 2px solid var(--menu-focus-ring); }
+.app-select-option[data-disabled] { opacity: 0.45; pointer-events: none; }
+.app-combobox-menu { position: fixed; z-index: 2400; overflow-y: auto; overscroll-behavior: contain; }
+.app-menu-option {
+  display: flex;
+  width: 100%;
+  min-height: var(--menu-row-height);
+  align-items: center;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: var(--menu-row-radius);
+  background: transparent;
+  color: var(--text);
+  text-align: start;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.app-menu-option[aria-selected="true"] { background: var(--bg-selected); }
+.app-menu :is(.app-menu-option, .project-picker-option)[aria-current="true"] {
+  background: var(--bg-selected) !important;
+  color: var(--text) !important;
+}
+.app-suggestion-menu button { min-height: var(--menu-row-height); }
+
+/* Keep the mobile-only section picker hidden on desktop after replacing select. */
+.settings-mobile-section-picker.app-select-trigger { display: none; }
+@media (max-width: 640px) {
+  .settings-mobile-section-picker.app-select-trigger { display: inline-flex; }
+}
+
+.app-menu-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+  white-space: normal;
+}
+
+.app-menu-copy > small {
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  font-weight: 400;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.composer-tool-menu {
+  width: 304px;
+  max-width: calc(100vw - 32px);
+}
+
+.composer-tool-menu .app-option-row > button[role="option"] {
+  min-height: 50px;
+  padding: 8px 10px;
+  align-items: flex-start;
+}
+
+.composer-tool-menu .app-option-row > button[role="option"] > :first-child {
+  margin-top: 4px;
+}
+
+@media (pointer: coarse) {
+  :root { --menu-row-height: 44px; }
+  .app-select-option { min-height: 44px; }
+  .app-menu :is(button[role="menuitem"], button[role="menuitemcheckbox"], button[role="menuitemradio"], button[role="option"]) {
+    min-height: 44px;
+  }
 }
 
 /* In-app context menu (components/DomContextMenuHost.tsx): the DOM stand-in for
@@ -3501,6 +4238,358 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   cursor: default;
 }
 
+/* ---- Settings dialog: native polish and per-platform chrome ---------------
+   The dialog is one component on every OS; these rules make it read as that
+   platform's preferences window. `<html data-platform>` comes from
+   lib/ui-platform.ts (set when the dialog mounts, in the browser too); with no
+   attribute — phones, tablets, unknown platforms — only the shared block
+   applies. Upstream's mobile layout (≤640px picker) is never restyled here.
+
+   Shared: sheet-style entrance, a blurred scrim, the system accent on the
+   "on" state of switches and sliders (the near-black brand accent stays on
+   buttons), and the 28px chip close button the other native modals use. */
+.settings-dialog-backdrop {
+  background: rgba(16, 16, 18, 0.34);
+  -webkit-backdrop-filter: blur(3px) saturate(110%);
+  backdrop-filter: blur(3px) saturate(110%);
+  animation: native-backdrop-in 150ms ease-out both;
+}
+
+.settings-dialog-surface {
+  --settings-control-on: var(--menu-selection-color);
+  --settings-control-on-hover: color-mix(in srgb, var(--menu-selection-color) 88%, var(--text));
+  --settings-control-knob-on: #ffffff;
+  box-shadow: var(--shadow-dialog);
+  animation: native-modal-in 200ms var(--ease-sheet) both;
+}
+
+.settings-dialog-surface .config-switch[aria-checked="true"] {
+  border-color: var(--settings-control-on);
+  background: var(--settings-control-on);
+}
+
+.settings-dialog-surface .config-switch[aria-checked="true"]:not(:disabled):hover {
+  border-color: var(--settings-control-on-hover);
+  background: var(--settings-control-on-hover);
+}
+
+.settings-dialog-surface .config-switch[aria-checked="true"] .config-switch-knob {
+  background: var(--settings-control-knob-on);
+}
+
+.settings-dialog-surface input[type="range"] {
+  accent-color: var(--settings-control-on);
+}
+
+.settings-dialog-close {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  transition:
+    color 140ms ease,
+    background 140ms ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .settings-dialog-backdrop,
+  .settings-dialog-surface {
+    animation: none;
+  }
+}
+
+/* macOS (and GNOME, which draws the same kind): a filled track with a white,
+   lightly shadowed knob in both states, no outline. */
+:root[data-platform="macos"] .settings-dialog-surface .config-switch,
+:root[data-platform="linux"] .settings-dialog-surface .config-switch {
+  border: 0;
+  background: rgba(120, 120, 128, 0.2);
+}
+
+:root.dark[data-platform="macos"] .settings-dialog-surface .config-switch,
+:root.dark[data-platform="linux"] .settings-dialog-surface .config-switch {
+  background: rgba(120, 120, 128, 0.36);
+}
+
+:root[data-platform="macos"] .settings-dialog-surface .config-switch:not(:disabled):hover,
+:root[data-platform="linux"] .settings-dialog-surface .config-switch:not(:disabled):hover {
+  background: rgba(120, 120, 128, 0.28);
+}
+
+:root[data-platform="macos"] .settings-dialog-surface .config-switch[aria-checked="true"],
+:root[data-platform="linux"] .settings-dialog-surface .config-switch[aria-checked="true"] {
+  background: var(--settings-control-on);
+}
+
+:root[data-platform="macos"] .settings-dialog-surface .config-switch[aria-checked="true"]:not(:disabled):hover,
+:root[data-platform="linux"] .settings-dialog-surface .config-switch[aria-checked="true"]:not(:disabled):hover {
+  background: var(--settings-control-on-hover);
+}
+
+:root[data-platform="macos"] .settings-dialog-surface .config-switch-knob,
+:root[data-platform="linux"] .settings-dialog-surface .config-switch-knob,
+:root[data-platform="macos"] .settings-dialog-surface .config-switch[aria-checked="true"] .config-switch-knob,
+:root[data-platform="linux"] .settings-dialog-surface .config-switch[aria-checked="true"] .config-switch-knob {
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.22), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+}
+
+:root[data-platform="macos"] .settings-dialog-surface .config-switch.is-small .config-switch-knob,
+:root[data-platform="linux"] .settings-dialog-surface .config-switch.is-small .config-switch-knob {
+  width: 10px;
+  height: 10px;
+}
+
+/* macOS: a preferences-window toolbar — icon over label, centered, the
+   selected item a rounded gray tile instead of an underline. The window title
+   is implied (the dialog keeps its aria-label), as in Safari's or Xcode's
+   Settings. */
+@media (min-width: 641px) {
+  :root[data-platform="macos"] .settings-dialog-header {
+    justify-content: center;
+    min-height: 64px;
+    padding: 0 52px;
+  }
+
+  :root[data-platform="macos"] .settings-dialog-title {
+    display: none;
+  }
+
+  :root[data-platform="macos"] .settings-section-tabs {
+    align-items: center;
+    gap: 2px;
+    height: 64px;
+    margin: 0;
+  }
+
+  :root[data-platform="macos"] .settings-section-tab {
+    flex: 0 0 auto;
+    flex-direction: column;
+    gap: 3px;
+    width: auto;
+    min-width: 64px;
+    height: 52px;
+    padding: 0 8px;
+    border-radius: 7px;
+    font-size: 11px;
+    transition:
+      color 140ms ease,
+      background 140ms ease;
+  }
+
+  :root[data-platform="macos"] .settings-section-tab .settings-section-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  :root[data-platform="macos"] .settings-section-tab::after {
+    display: none;
+  }
+
+  :root[data-platform="macos"] .settings-section-tab[aria-current="page"] {
+    background: var(--bg-selected);
+    font-weight: 500;
+  }
+
+  :root[data-platform="macos"] .settings-section-tab:not(:disabled):not([aria-current="page"]):hover {
+    background: var(--bg-hover);
+  }
+
+  :root[data-platform="macos"] .settings-dialog-close {
+    top: 18px;
+  }
+}
+
+/* Windows 11 (Fluent) switch: an outlined pill whose knob grows into a filled
+   accent track when on. */
+:root[data-platform="windows"] .settings-dialog-surface .config-switch {
+  width: 40px;
+  height: 20px;
+  border-color: var(--text-muted);
+  border-radius: 10px;
+  background: transparent;
+}
+
+:root[data-platform="windows"] .settings-dialog-surface .config-switch:not(:disabled):hover {
+  border-color: var(--text);
+  background: var(--bg-hover);
+}
+
+:root[data-platform="windows"] .settings-dialog-surface .config-switch[aria-checked="true"] {
+  border-color: var(--settings-control-on);
+  background: var(--settings-control-on);
+}
+
+:root[data-platform="windows"] .settings-dialog-surface .config-switch[aria-checked="true"]:not(:disabled):hover {
+  border-color: var(--settings-control-on-hover);
+  background: var(--settings-control-on-hover);
+}
+
+:root[data-platform="windows"] .settings-dialog-surface .config-switch-knob {
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  background: var(--text-muted);
+}
+
+:root[data-platform="windows"] .settings-dialog-surface .config-switch[aria-checked="true"] .config-switch-knob {
+  transform: translateX(20px);
+  background: var(--settings-control-knob-on);
+}
+
+:root[data-platform="windows"] .settings-dialog-surface .config-switch.is-small {
+  width: 30px;
+  height: 16px;
+  border-radius: 8px;
+}
+
+:root[data-platform="windows"] .settings-dialog-surface .config-switch.is-small .config-switch-knob {
+  width: 8px;
+  height: 8px;
+}
+
+:root[data-platform="windows"] .settings-dialog-surface .config-switch.is-small[aria-checked="true"] .config-switch-knob {
+  transform: translateX(14px);
+}
+
+/* Windows and Linux: a navigation pane on the left and a content card under
+   a title bar, as in the Windows 11 Settings app and GNOME Settings. The
+   header becomes `display: contents` so its title, tabs and close button
+   are placed on the surface's grid directly. Below 900px the pane plus the
+   Models/Agents list would leave the detail too narrow, so the top tabs stay. */
+@media (min-width: 900px) {
+  :root[data-platform="windows"] .settings-dialog-surface,
+  :root[data-platform="linux"] .settings-dialog-surface {
+    display: grid;
+    grid-template-columns: 208px minmax(0, 1fr);
+    grid-template-rows: 48px minmax(0, 1fr);
+    width: min(1120px, calc(100vw - 64px));
+    border-radius: 8px;
+  }
+
+  :root[data-platform="windows"] .settings-dialog-header,
+  :root[data-platform="linux"] .settings-dialog-header {
+    display: contents;
+  }
+
+  :root[data-platform="windows"] .settings-dialog-title,
+  :root[data-platform="linux"] .settings-dialog-title {
+    grid-area: 1 / 1;
+    align-self: center;
+    padding-left: 20px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  :root[data-platform="windows"] .settings-section-tabs,
+  :root[data-platform="linux"] .settings-section-tabs {
+    grid-area: 2 / 1;
+    flex-direction: column;
+    gap: var(--choice-row-gap);
+    height: auto;
+    margin: 0;
+    padding: var(--choice-inset);
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  :root[data-platform="windows"] .settings-section-tab,
+  :root[data-platform="linux"] .settings-section-tab {
+    flex: 0 0 36px;
+    justify-content: flex-start;
+    gap: 12px;
+    width: auto;
+    padding: 0 12px;
+    border-radius: var(--choice-row-radius);
+    font-size: 13px;
+    transition:
+      color 120ms ease,
+      background 120ms ease;
+  }
+
+  :root[data-platform="windows"] .settings-section-tab[aria-current="page"],
+  :root[data-platform="linux"] .settings-section-tab[aria-current="page"] {
+    background: var(--bg-selected);
+    font-weight: 400;
+  }
+
+  :root[data-platform="windows"] .settings-section-tab:not(:disabled):not([aria-current="page"]):hover,
+  :root[data-platform="linux"] .settings-section-tab:not(:disabled):not([aria-current="page"]):hover {
+    background: var(--bg-hover);
+  }
+
+  /* Fluent's selection pill: a short accent bar on the leading edge. */
+  :root[data-platform="windows"] .settings-section-tab::after,
+  :root[data-platform="linux"] .settings-section-tab::after {
+    top: 50%;
+    bottom: auto;
+    left: 0;
+    width: 3px;
+    height: 16px;
+    border-radius: 2px;
+    background: var(--settings-control-on);
+    transform: translateY(-50%) scaleY(0.5);
+  }
+
+  :root[data-platform="windows"] .settings-section-tab[aria-current="page"]::after,
+  :root[data-platform="linux"] .settings-section-tab[aria-current="page"]::after {
+    transform: translateY(-50%) scaleY(1);
+  }
+
+  /* GNOME has no selection bar; the tile alone marks the page. */
+  :root[data-platform="linux"] .settings-section-tab::after {
+    display: none;
+  }
+
+  :root[data-platform="windows"] .settings-dialog-main,
+  :root[data-platform="linux"] .settings-dialog-main {
+    grid-area: 2 / 2;
+    border-top: 1px solid var(--separator);
+    border-left: 1px solid var(--separator);
+    border-top-left-radius: 8px;
+    background: var(--surface-elevated);
+  }
+
+  :root[data-platform="windows"] .settings-dialog-close,
+  :root[data-platform="linux"] .settings-dialog-close {
+    position: static;
+    grid-area: 1 / 2;
+    align-self: start;
+    justify-self: end;
+  }
+
+  /* Windows caption button: flush in the corner, red on hover. */
+  :root[data-platform="windows"] .settings-dialog-close {
+    width: 46px;
+    height: 32px;
+    border-radius: 0 8px 0 0;
+    font-size: 18px;
+  }
+
+  :root[data-platform="windows"] .settings-dialog-close:hover {
+    background: #c42b1c;
+    color: #ffffff;
+  }
+
+  /* GNOME header-bar close: a small round gray button. */
+  :root[data-platform="linux"] .settings-dialog-close {
+    width: 24px;
+    height: 24px;
+    margin: 12px 12px 0 0;
+    border-radius: 50%;
+    background: var(--bg-hover);
+    font-size: 16px;
+  }
+
+  :root[data-platform="linux"] .settings-dialog-close:hover {
+    background: var(--bg-selected);
+  }
+}
+
 .chat-composer-wrap {
   width: 100%;
   max-width: 820px;
@@ -3509,11 +4598,18 @@ html:not(.dark) .session-item.is-selected .session-item-time {
 }
 
 .chat-composer {
+  --composer-send-size: 36px;
+  --composer-font-size: var(--chat-content-font-size, 14px);
+  --composer-line-height: calc(var(--composer-font-size) * 1.55);
+  --composer-first-line-height: max(var(--composer-send-size), var(--composer-line-height));
+  --composer-inset: 10px;
+  --composer-border-width: 1px;
   overflow: visible;
-  padding: 8px 9px;
+  padding: var(--composer-inset);
   background: var(--surface) !important;
-  border: var(--hairline) solid var(--border) !important;
-  border-radius: var(--radius-xl) !important;
+  border: var(--composer-border-width) solid var(--border) !important;
+  /* The outer bottom-right arc and the send circle share their center. */
+  border-radius: calc(var(--composer-send-size) / 2 + var(--composer-inset) + var(--composer-border-width)) !important;
   box-shadow: var(--shadow-composer) !important;
   transition:
     border-color 160ms ease,
@@ -3522,26 +4618,62 @@ html:not(.dark) .session-item.is-selected .session-item-time {
 }
 
 .chat-composer-editor {
-  padding: 4px 3px 6px 5px !important;
+  padding: 0 0 0 4px !important;
   border: 0 !important;
   border-radius: 0 !important;
   background: transparent !important;
   box-shadow: none !important;
 }
 
+/* The attach SVG and the first text line share a center, including empty
+   placeholders and multi-line drafts. Send stays anchored at the bottom. */
+.chat-composer-editor:has(> .composer-attach-button) {
+  align-items: flex-start !important;
+}
+.chat-composer-editor:has(> .composer-attach-button) > .chat-input-textarea {
+  box-sizing: border-box;
+  min-height: var(--composer-first-line-height) !important;
+  padding-block: max(0px, calc((var(--composer-send-size) - var(--composer-line-height)) / 2));
+  padding-inline: 0;
+}
+
+/* Focus only lifts the hairline a step; the caret already says where typing
+   goes, and the accent border read as a bright form-field ring in dark mode. */
 .chat-composer:focus-within {
-  border-color: var(--accent-border) !important;
+  border-color: color-mix(in srgb, var(--text) 22%, transparent) !important;
   box-shadow: var(--shadow-composer) !important;
 }
 
+/* Mode cues on the card itself (the editor's own border is zeroed above, so a
+   state painted there never shows). Declared after :focus-within so the cue
+   stays while typing. */
+.chat-composer[data-state="steer"] {
+  border-color: color-mix(in srgb, var(--warning) 48%, transparent) !important;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--warning) 10%, transparent),
+    var(--shadow-composer) !important;
+}
+
+.chat-composer[data-state="bash"] {
+  border-color: color-mix(in srgb, var(--success) 48%, transparent) !important;
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--success) 10%, transparent),
+    var(--shadow-composer) !important;
+}
+
 .chat-composer textarea {
-  font-size: var(--chat-content-font-size, 14px) !important;
-  line-height: 1.55 !important;
+  font-size: var(--composer-font-size) !important;
+  line-height: var(--composer-line-height) !important;
+}
+.chat-composer .chat-input-textarea::placeholder {
+  line-height: var(--composer-line-height);
+  white-space: nowrap;
 }
 
 @media (max-width: 640px) {
-  .chat-composer textarea {
-    font-size: max(16px, var(--chat-content-font-size, 14px)) !important;
+  .chat-composer {
+    --composer-font-size: max(16px, var(--chat-content-font-size, 14px));
+    --composer-line-height: calc(var(--composer-font-size) * 1.5);
   }
 }
 
@@ -3572,7 +4704,7 @@ html:not(.dark) .session-item.is-selected .session-item-time {
   height: 32px;
   padding: 0 8px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--radius-md);
   background: transparent;
   color: var(--text-muted);
   font-size: var(--fs-small);
@@ -3602,14 +4734,181 @@ html:not(.dark) .session-item.is-selected .session-item-time {
 }
 
 .chat-composer-controls .native-popover button {
-  border-radius: 7px;
+  border-radius: var(--radius-md);
 }
 
-.composer-send-button {
-  min-width: 72px;
+/* Steer / Follow-up while a run is active. One shape, two theme hues; the
+   label mixes the hue toward --text so it holds contrast in both themes
+   (pure --warning on white or on the dark card is too faint to read). */
+.composer-queue-button {
+  --queue-hue: var(--warning);
+  display: flex;
+  align-items: center;
+  gap: 5px;
   height: 32px;
+  padding: 0 12px;
+  border: var(--hairline) solid color-mix(in srgb, var(--queue-hue) 38%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--queue-hue) 12%, transparent);
+  color: color-mix(in srgb, var(--queue-hue) 72%, var(--text));
+  font-size: var(--fs-small);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background 120ms ease, transform 140ms var(--ease-native);
+}
+
+.composer-queue-button[data-kind="followup"] {
+  --queue-hue: var(--info);
+}
+
+.composer-queue-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--queue-hue) 20%, transparent);
+}
+
+.composer-queue-button:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.composer-queue-button:disabled {
+  background: none;
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
+
+/* Section headings and plain rows inside the composer's run-settings and
+   session menus (the reasoning rows are SelectorRow and style themselves). */
+.composer-menu-heading {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 6px 9px 4px;
+  color: var(--text-dim);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.composer-menu-heading[data-separated] {
+  margin-top: 5px;
+  padding-top: 10px;
+  border-top: var(--hairline) solid var(--separator);
+}
+
+.composer-menu-heading-note {
+  margin-left: auto;
+  font-weight: 400;
+}
+
+.composer-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: left;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.composer-menu-row:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.composer-menu-row[data-active] {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.composer-menu-row:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Attach mirrors Send's circle, but stays beside the first line of text. */
+.composer-attach-button {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
-  border-radius: 9px !important;
+  width: var(--composer-send-size);
+  height: var(--composer-send-size);
+  margin-block-start: calc((var(--composer-first-line-height) - var(--composer-send-size)) / 2);
+  margin-left: -4px;
+  padding: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-muted);
+}
+
+.composer-attach-button[data-active] {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.composer-trigger-hint {
+  flex: 0 0 auto;
+  align-self: center;
+  color: var(--text-dim);
+  font-size: var(--fs-small);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 160ms ease;
+}
+
+.chat-composer:focus-within .composer-trigger-hint {
+  opacity: 1;
+}
+
+/* Round, icon-only send. The fill is the state: a quiet tinted disc while the
+   draft is empty, the solid accent once there is something to send. */
+.composer-send-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--accent) 24%, transparent);
+  color: var(--accent-contrast);
+  cursor: pointer;
+  transition:
+    background 150ms ease,
+    color 150ms ease,
+    box-shadow 150ms ease,
+    transform 140ms var(--ease-native);
+}
+
+.composer-send-button:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.composer-send-button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.composer-send-button:disabled {
+  background: var(--bg-hover);
+  box-shadow: none;
+  color: var(--text-dim);
+  cursor: default;
+}
+
+@media (max-width: 640px) {
+  .composer-send-button {
+    width: 36px;
+    height: 36px;
+  }
 }
 
 .chat-input-shell {
@@ -3646,6 +4945,56 @@ html:not(.dark) .session-item.is-selected .session-item-time {
 
 .message-user {
   margin-bottom: 18px !important;
+}
+
+/* Message actions are pointer-revealed on hover-only devices, but remain in
+   the tab order. Reveal them for keyboard focus and on touch, where there is
+   no hover affordance. */
+.message-copy-actions,
+.user-msg-actions {
+  display: flex;
+  gap: 3px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.message-user:hover .message-copy-actions,
+.message-user:focus-within .message-copy-actions,
+.message-user:hover .user-msg-actions,
+.message-user:focus-within .user-msg-actions,
+.message-assistant:hover .message-copy-action,
+.message-assistant:focus-within .message-copy-action {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  .message-copy-actions,
+  .user-msg-actions,
+  .message-copy-action {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* The workbench styles above this point can layer broad interaction rules
+   after the message section. Keep action affordances authoritative here. */
+.message-user:hover .message-copy-actions,
+.message-user:focus-within .message-copy-actions,
+.message-user:hover .user-msg-actions,
+.message-user:focus-within .user-msg-actions,
+.message-assistant:hover .message-copy-action,
+.message-assistant:focus-within .message-copy-action {
+  pointer-events: auto !important;
+}
+
+@media (hover: none) {
+  .message-copy-actions,
+  .user-msg-actions,
+  .message-copy-action {
+    pointer-events: auto !important;
+  }
 }
 
 .message-user-bubble {
@@ -3748,7 +5097,8 @@ html:not(.dark) .session-item.is-selected .session-item-time {
 }
 .markdown-body p { margin: 0 0 10px; }
 .markdown-body p:last-child { margin-bottom: 0; }
-.markdown-body > :first-child { margin-top: 0; }
+.markdown-body > :first-child,
+.markdown-body > .streamdown-animated > :first-child { margin-top: 0; }
 .markdown-body h1, .markdown-body h2, .markdown-body h3 {
   font-weight: 600;
   margin: 18px 0 8px;
@@ -5305,6 +6655,94 @@ span.linenumber {
   letter-spacing: -0.005em;
 }
 
+.app-notice-shelf {
+  position: fixed;
+  top: 14px;
+  right: 16px;
+  z-index: 1200;
+  display: flex;
+  width: min(420px, calc(100vw - 24px));
+  flex-direction: column;
+  align-items: stretch;
+  pointer-events: none;
+}
+
+.app-notice-item {
+  position: relative;
+  display: flex;
+  min-height: 48px;
+  max-height: 460px;
+  align-items: flex-start;
+  gap: 9px;
+  margin-bottom: 7px;
+  overflow: hidden;
+  padding: 10px 9px 10px 13px;
+  pointer-events: auto;
+}
+
+.app-notice-item.is-exiting {
+  animation: notice-shelf-out 180ms var(--ease-native) forwards;
+}
+
+.app-notice-message {
+  flex: 1;
+  min-width: 0;
+  max-height: 440px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-line;
+}
+
+.app-notice-action,
+.app-notice-dismiss {
+  flex: 0 0 auto;
+  min-height: 26px;
+  border: 1px solid var(--separator);
+  border-radius: 7px;
+  color: var(--text-muted);
+  cursor: pointer;
+  background: transparent;
+  transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+
+.app-notice-action {
+  padding: 0 10px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.app-notice-dismiss {
+  display: inline-flex;
+  width: 26px;
+  align-items: center;
+  justify-content: center;
+}
+
+.app-notice-action:hover,
+.app-notice-action:focus-visible,
+.app-notice-dismiss:hover,
+.app-notice-dismiss:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 38%, var(--separator));
+  background: var(--accent-soft);
+  color: var(--accent);
+  outline: none;
+}
+
+.app-notice-count {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 .native-update-reminder {
   border-color: var(--separator) !important;
   border-radius: 14px !important;
@@ -5750,15 +7188,55 @@ span.linenumber {
 
 .file-viewer-mode-switch {
   display: flex;
-  padding: 2px;
-  overflow: hidden;
-  gap: 1px;
-  border: var(--hairline) solid var(--separator);
-  background: var(--bg-subtle);
-  height: 32px;
-  border-radius: 9px;
 }
 
+.file-viewer-mode-switch > .file-viewer-mode-button {
+  min-height: 24px;
+  padding: 2px 8px;
+  filter: none;
+}
+@media (pointer: coarse) {
+  .file-viewer-mode-switch > .file-viewer-mode-button { min-height: 44px; }
+}
+
+/* Tool definitions use the same separated rows as the settings sidebars.
+   Qualify the scope to override the upstream component's styled-jsx rules. */
+.tool-definitions-panel .tool-definitions-sidebar .tool-definitions-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--choice-row-gap);
+  padding: var(--choice-inset);
+}
+.tool-definitions-panel .tool-definitions-sidebar .tool-definitions-list > .tool-definitions-item {
+  position: relative;
+  flex-shrink: 0;
+  min-height: 34px;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: var(--choice-row-radius);
+}
+.tool-definitions-panel .tool-definitions-sidebar .tool-definitions-item.selected {
+  background: var(--bg-selected);
+  box-shadow: none;
+  color: var(--text);
+}
+.tool-definitions-panel .tool-definitions-sidebar .tool-definitions-item.selected::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: 0;
+  top: calc(50% - 8px);
+  width: 3px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--menu-selection-color);
+}
+.tool-definitions-panel .tool-definitions-sidebar .tool-definitions-item:focus-visible {
+  outline: 2px solid var(--menu-focus-ring);
+  outline-offset: -2px;
+}
+@media (pointer: coarse) {
+  .tool-definitions-panel .tool-definitions-sidebar .tool-definitions-list > .tool-definitions-item { min-height: 44px; }
+}
 
 .file-viewer-mode-button {
   border: 0;
@@ -5822,6 +7300,13 @@ span.linenumber {
 /* With the actions group present, its own auto margin does the pushing; a
    second one here would split the free space and float both mid-bar. */
 .app-topbar-actions ~ .main-file-toggle {
+  margin-left: 0;
+}
+/* Same for the Windows/Linux window controls that follow them: their own
+   auto margin split the free space with the group's, leaving the toggle
+   mid-bar with a wide gap before the controls (#129). */
+.app-topbar-actions ~ .window-controls,
+.main-file-toggle ~ .window-controls {
   margin-left: 0;
 }
 
@@ -6153,6 +7638,30 @@ span.linenumber {
 }
 
 .scheduled-warning p { margin: 0; }
+
+.scheduled-owner-notice {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+}
+
+.scheduled-owner-notice .scheduled-mono {
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+
+.scheduled-owner-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.scheduled-owner-actions .scheduled-button {
+  height: 30px;
+  padding: 0 10px;
+  font-size: var(--fs-small);
+}
 
 /* Buttons and inputs */
 .scheduled-button {
@@ -7070,4 +8579,699 @@ html.native-desktop :is(
   .right-panel-container.right-panel-closed {
     transition: none !important;
   }
+}
+
+/* ---- Settings › Models › modelOverrides (#131) ------------------------------
+   pi applies a provider's modelOverrides last, so the panel shows them as the
+   values in effect: read-only on the provider, as hints under the model's spec
+   fields. Empty spec fields say "not set" instead of a number that reads as
+   a limit, and edits that are not saved yet are marked as such. */
+.models-spec-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+  line-height: 1.4;
+}
+.models-spec-hint[data-source="override"] { color: var(--accent); }
+.models-spec-unsaved,
+.models-sidebar-override-badge {
+  flex-shrink: 0;
+  padding: 0 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  line-height: 15px;
+}
+.models-spec-unsaved {
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+  color: var(--warning);
+}
+.models-sidebar-override-badge {
+  background: var(--accent-soft);
+  color: var(--text-muted);
+}
+.models-override-notice {
+  margin-top: 8px;
+  padding: 6px 9px;
+  border-radius: 5px;
+  background: var(--accent-soft);
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.models-override-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.models-override-help {
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+  line-height: 1.45;
+}
+.models-override-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: var(--hairline) solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.models-override-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  padding: 6px 10px;
+}
+.models-override-row + .models-override-row { border-top: var(--hairline) solid var(--border); }
+.models-override-id {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.models-override-target {
+  color: var(--text-dim);
+  font-size: var(--fs-caption);
+}
+.models-override-fields {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+}
+.models-override-value {
+  margin-left: 5px;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+
+/* Chat attachments: text files chosen in the composer, and the chips a sent message shows. */
+.composer-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  min-height: 24px;
+  padding: 2px 4px 2px 8px;
+  border: var(--hairline) solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+
+.composer-file-chip-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-file-chip-size {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+}
+
+.composer-file-chip-remove {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.composer-file-chip-remove:hover {
+  background: var(--bg-selected);
+  color: var(--text);
+}
+
+.message-attached-files {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.message-attached-file {
+  min-width: 0;
+  border: var(--hairline) solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-panel);
+}
+
+.message-attached-file-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 4px 8px;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+  text-align: left;
+  cursor: pointer;
+}
+
+.message-attached-file-name {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--text);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-attached-file-size {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+}
+
+.message-attached-file-body {
+  max-height: 260px;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+  border-top: var(--hairline) solid var(--border);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+
+/* Chats: the pin mark and archived rows. */
+.session-item-pin {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+  opacity: 0.8;
+}
+
+.sidebar-chats-archived-toggle {
+  margin-top: 2px;
+}
+
+.sidebar-chats-archived-row {
+  opacity: 0.62;
+}
+
+
+/* Settings › General › Chats: stacked label + control rows. */
+.settings-chats-field {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  font-size: var(--fs-small);
+}
+
+.settings-chats-control {
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border: var(--hairline) solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.settings-chats-instructions textarea {
+  min-height: 96px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.settings-chats-hint {
+  color: var(--text-dim);
+  font-size: var(--fs-small);
+}
+/* Preserve the fork composer geometry after upstream layout and Send changes. */
+.native-primary-button.composer-send-button {
+  flex: 0 0 var(--composer-send-size);
+  align-self: flex-end;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--composer-send-size);
+  height: var(--composer-send-size);
+  min-width: var(--composer-send-size);
+  min-height: var(--composer-send-size);
+  padding: 0;
+  border-radius: 50% !important;
+  box-shadow: none;
+}
+
+/* One action in the editor; editable pending messages dock above its surface. */
+.composer-outbox {
+  margin: 0 18px -12px;
+  padding: 4px 6px 16px;
+  max-height: 188px;
+  overflow-y: auto;
+  border: var(--hairline) solid var(--border);
+  border-bottom: 0;
+  border-radius: 18px 18px 0 0;
+  background: var(--surface);
+}
+.composer-outbox + .chat-composer { position: relative; }
+.composer-outbox-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+  min-width: 0;
+  padding: 0 4px;
+  color: var(--text-muted);
+  font-size: var(--fs-small);
+}
+.composer-outbox-row + .composer-outbox-row { margin-top: 4px; }
+.composer-outbox-mark { flex: 0 0 auto; color: var(--text-dim); }
+.composer-outbox button {
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+.composer-outbox-preview {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  color: var(--text) !important;
+}
+.composer-outbox-image-count { color: var(--text-dim); }
+.composer-outbox-actions { display: flex; flex-shrink: 0; align-items: center; gap: 4px; }
+.composer-outbox-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-width: 30px;
+  min-height: 30px;
+  padding: 5px;
+}
+.composer-outbox-actions .composer-outbox-send { padding-inline: 7px; white-space: nowrap; }
+.composer-outbox button:hover:not(:disabled) { background: var(--bg-hover); color: var(--text); }
+.composer-outbox button:focus-visible { outline: 2px solid var(--text); outline-offset: 1px; }
+.composer-outbox button:disabled { opacity: 0.5; cursor: default; }
+@media (max-width: 480px) {
+  .composer-outbox { margin-inline: 10px; }
+  .composer-outbox-row { gap: 4px; }
+  .composer-outbox-mark { display: none; }
+  .composer-outbox-send-label { display: none; }
+}
+@media (pointer: coarse) {
+  .composer-outbox-actions button { min-width: 44px; min-height: 44px; }
+  .composer-outbox-row { min-height: 44px; }
+  .composer-outbox-preview { padding-block: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .composer-outbox button { transition: none; }
+}
+
+.native-primary-button.composer-send-button:hover:not(:disabled) {
+  background: var(--accent-hover);
+  box-shadow: none;
+}
+
+.native-primary-button.composer-send-button:active:not(:disabled) {
+  transform: scale(0.96);
+}
+
+.composer-send-button:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 3px;
+}
+
+@media (pointer: coarse) {
+  .chat-composer {
+    --composer-send-size: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-composer,
+  .native-primary-button.composer-send-button {
+    transition: none !important;
+  }
+
+  .native-primary-button.composer-send-button:active:not(:disabled) {
+    transform: none;
+  }
+}
+
+
+.app-menu [role="menuitemradio"][aria-checked="true"] { background: var(--bg-selected) !important; }
+
+
+/* A file a chat saved to Downloads (save_to_downloads). */
+.saved-file-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 6px 10px 8px;
+  padding: 8px 10px;
+  border: var(--hairline) solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  color: var(--text-muted);
+}
+
+.saved-file-card-text {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.saved-file-card-name {
+  overflow: hidden;
+  color: var(--text);
+  font-size: var(--fs-body);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-file-card-path {
+  overflow: hidden;
+  color: var(--text-dim);
+  font-size: var(--fs-small);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.saved-file-card-error {
+  color: var(--danger);
+  font-size: var(--fs-small);
+}
+
+.saved-file-card-reveal {
+  flex: 0 0 auto;
+  padding: 4px 10px;
+  border: var(--hairline) solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font-size: var(--fs-small);
+  cursor: pointer;
+}
+
+.saved-file-card-reveal:hover {
+  background: var(--bg-hover);
+}
+
+/* Background washes. The preview cards and the actual canvas share the
+   same stops; mode only chooses the corresponding light or dark variant. */
+:root,
+[data-background-preview="rex"] {
+  --wash-light-stops: #ebe0f3, #f3e7f1, #f7eee4, #f6efcf;
+  --wash-light-glow: rgba(247, 220, 241, 0.75);
+  --wash-dark-stops: #17141f, #191620, #1b1916;
+  --wash-dark-glow: rgba(120, 70, 120, 0.22);
+}
+:root[data-background="mist"],
+[data-background-preview="mist"] {
+  --wash-light-stops: #e3e9f4, #ebeff6, #f1f2f3, #f2f1ec;
+  --wash-light-glow: rgba(210, 225, 248, 0.75);
+  --wash-dark-stops: #12151b, #14171d, #17181b;
+  --wash-dark-glow: rgba(70, 100, 150, 0.22);
+}
+:root[data-background="meadow"],
+[data-background-preview="meadow"] {
+  --wash-light-stops: #e2eee5, #ebf2e7, #f3f2e2, #f5f0d6;
+  --wash-light-glow: rgba(214, 240, 222, 0.75);
+  --wash-dark-stops: #111814, #141a16, #181a14;
+  --wash-dark-glow: rgba(70, 130, 95, 0.2);
+}
+:root[data-background="dusk"],
+[data-background-preview="dusk"] {
+  --wash-light-stops: #e4dbf3, #efdeee, #f6e3dc, #f7e6cf;
+  --wash-light-glow: rgba(246, 206, 222, 0.8);
+  --wash-dark-stops: #191321, #1e161e, #221a17;
+  --wash-dark-glow: rgba(150, 80, 110, 0.25);
+}
+:root[data-background="plain"],
+[data-background-preview="plain"] {
+  --wash-light-stops: #eceef4, #eceef4;
+  --wash-light-glow: transparent;
+  --wash-dark-stops: #141418, #141418;
+  --wash-dark-glow: transparent;
+}
+:root {
+  --canvas-background: linear-gradient(225deg in oklab, var(--wash-light-glow), transparent 50%),
+    linear-gradient(180deg in oklab, var(--wash-light-stops));
+}
+html.dark {
+  --canvas-background: linear-gradient(225deg in oklab, var(--wash-dark-glow), transparent 50%),
+    linear-gradient(180deg in oklab, var(--wash-dark-stops));
+}
+
+.settings-dialog-surface { background: var(--canvas-background); }
+.settings-dialog-main { background: var(--surface-elevated); }
+/* Embedded editors share the General/Appearance content surface. Keep the
+   surrounding theme wash and the shared hover/selection tokens unchanged. */
+.settings-dialog-main .config-panel-root.is-embedded > .config-panel-surface,
+.settings-dialog-main .config-panel-root.is-embedded .config-sidebar {
+  background: var(--surface-elevated);
+}
+
+.settings-appearance-controls {
+  padding: 16px 20px;
+  border-radius: var(--radius-lg);
+  background: var(--bg-subtle);
+}
+.settings-appearance-mode-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.settings-appearance-mode-row .settings-general-heading { margin: 0; }
+.settings-appearance .settings-theme-options {
+  display: flex;
+  width: auto;
+  max-width: 100%;
+}
+.settings-appearance .settings-theme-option {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.settings-appearance .settings-theme-option-label { white-space: nowrap; }
+.settings-background-grid {
+  display: grid;
+  /* Use the available content width; empty columns must not force a wrap. */
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 18px 16px;
+}
+.settings-background-option {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  cursor: pointer;
+}
+.settings-background-swatch {
+  position: relative;
+  display: block;
+  aspect-ratio: 1.5;
+  overflow: hidden;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-lg);
+  background: linear-gradient(225deg in oklab, var(--wash-light-glow), transparent 50%),
+    linear-gradient(180deg in oklab, var(--wash-light-stops));
+  box-shadow: var(--shadow-control);
+}
+html.dark .settings-background-swatch {
+  background: linear-gradient(225deg in oklab, var(--wash-dark-glow), transparent 50%),
+    linear-gradient(180deg in oklab, var(--wash-dark-stops));
+}
+.settings-background-mini-card {
+  position: absolute;
+  inset: 16% 8% -8% 25%;
+  border-radius: 8px;
+  background: var(--workbench-bg);
+}
+.settings-background-mini-sidebar {
+  position: absolute;
+  top: 31%;
+  left: 8%;
+  width: 12%;
+  height: 5px;
+  border-radius: 3px;
+  background: var(--text-dim);
+  opacity: 0.35;
+}
+.settings-background-name {
+  text-align: center;
+  color: var(--text-muted);
+  font-size: var(--fs-body);
+}
+.settings-background-option:has(input:checked) .settings-background-name {
+  color: var(--text);
+  font-weight: 600;
+}
+.settings-background-option:has(input:checked) .settings-background-swatch {
+  box-shadow: inset 0 0 0 2px var(--menu-selection-color);
+}
+.settings-background-indicator {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--menu-selection-color);
+  display: none;
+  align-items: center;
+  justify-content: center;
+}
+.settings-background-indicator::after {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--workbench-bg);
+}
+.settings-background-option:has(input:checked) .settings-background-indicator { display: flex; }
+.settings-background-option:hover .settings-background-swatch {
+  border-color: var(--menu-selection-color);
+}
+.settings-background-option:has(input:focus-visible) .settings-background-swatch {
+  outline: 2px solid var(--menu-focus-ring);
+  outline-offset: 3px;
+}
+
+.settings-font-heading-row {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.settings-font-heading-row .settings-general-heading { margin: 0; }
+.settings-font-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 280px);
+  align-items: center;
+  gap: 12px 24px;
+  padding-block: 14px;
+}
+.settings-font-control { display: grid; min-width: 0; gap: 8px; }
+.settings-font-control .app-select-trigger { width: 100%; min-width: 0; }
+.settings-font-custom { display: flex; align-items: center; gap: 8px; }
+.settings-font-custom input {
+  width: 100%;
+  min-width: 0;
+  padding: 7px 10px;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  background: var(--bg);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+}
+.settings-font-custom input[aria-invalid="true"] { border-color: var(--danger); }
+.settings-font-custom .config-button { flex-shrink: 0; }
+.settings-font-preview {
+  display: grid;
+  gap: 6px;
+  padding: 16px 14px;
+  border-top: var(--hairline) solid var(--border);
+  font-size: var(--fs-body);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.settings-font-preview p { margin: 0; }
+.settings-font-preview code { color: var(--text-muted); white-space: pre-wrap; }
+.settings-font-status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+@media (max-width: 640px) {
+  .settings-font-option { grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .settings-font-custom input { font-size: 16px; }
+  .settings-background-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 12px; }
+  .settings-appearance .settings-theme-options { width: 100%; }
+  .settings-appearance .settings-theme-option { flex: 1 1 0; padding-inline: 5px; gap: 0; }
+  .settings-appearance .settings-theme-option svg { display: none; }
+}
+@media (pointer: coarse) {
+  .settings-appearance .settings-theme-option { min-height: 44px; }
+}
+
+/* Chat folder and computer access: the switch in the composer's run menu, and the checkbox in
+   the chat confirmation dialog (which borrows the trust dialog's frame). */
+.chat-access-switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 15px;
+  border-radius: 999px;
+  background: var(--border);
+  transition: background 0.12s;
+}
+
+.chat-access-switch::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: var(--bg);
+  transition: transform 0.12s;
+}
+
+.chat-access-switch[data-on] {
+  background: var(--accent);
+}
+
+.chat-access-switch[data-on]::after {
+  transform: translateX(11px);
+}
+
+.chat-confirm-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.project-trust-button.is-danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
 }

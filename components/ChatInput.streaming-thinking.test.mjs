@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const source = await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8");
-const session = await readFile(new URL("../hooks/useAgentSession.ts", import.meta.url), "utf8");
-const thinkingControl = source.slice(source.indexOf("{onThinkingLevelChange && ("));
+const source = (await readFile(new URL("./ChatInput.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const session = (await readFile(new URL("../hooks/useAgentSession.ts", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+// Reasoning stays separate from Config; its block starts here.
+const thinkingControl = source.slice(source.indexOf("{(onThinkingLevelChange || chatOnly) && ("));
 
 // The SDK re-reads the thinking level before every model request of a run,
 // so a change made mid-run applies from the next request (#851).
@@ -15,9 +16,10 @@ test("keeps one thinking control and lets it change the level while the session 
   assert.doesNotMatch(button, /disabled=/);
   assert.match(button, /onClick=\{\(\) => setThinkingDropdownOpen\(\(v\) => !v\)\}/);
   assert.doesNotMatch(source, /if \(!isStreaming\) return;\s*setThinkingDropdownOpen\(false\)/);
-  assert.match(thinkingControl, /title=\{isStreaming/);
-  assert.match(thinkingControl, /t\("chat\.currentReasoning", \{ level: thinkingDisplayLabel \}\)/);
-  assert.match(thinkingControl, /t\("chat\.changeReasoning", \{ level: thinkingDisplayLabel \}\)/);
+  assert.match(button, /title=\{runSettingsTitle\}/);
+  const title = source.slice(source.indexOf("const runSettingsTitle"));
+  assert.match(title, /\(isStreaming\s*\? t\("chat\.currentReasoning", \{ level: thinkingDisplayLabel \}\)/);
+  assert.match(title, /t\("chat\.changeReasoning", \{ level: thinkingDisplayLabel \}\)/);
 });
 
 test("shows the resolved level and treats auto as an uncommitted default", () => {

@@ -1,13 +1,11 @@
 "use client";
 
+import { AppSelect } from "./AppSelect";
+
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
-import { useTheme } from "@/hooks/useTheme";
 import { useDiffViewMode } from "@/hooks/useDiffViewMode";
 import { PRODUCT_NAME } from "@/lib/branding";
-import { openPathNative, isTauriDesktop } from "@/lib/desktop-native";
-import { THEME_OPTIONS } from "@/lib/theme";
-import { ThemeIcon } from "./ThemeIcon";
 import {
   CHAT_CONTENT_WIDTH_DEFAULT,
   CHAT_CONTENT_WIDTH_MAX,
@@ -26,6 +24,7 @@ import {
   type SettingsSection,
 } from "@/lib/settings-navigation";
 import { focusModalPanel, listenForPanelEscape } from "@/lib/stacked-dialog";
+import { applyUiPlatform } from "@/lib/ui-platform";
 import {
   isThinkingExpandedByDefault,
   setThinkingExpandedByDefault,
@@ -39,6 +38,8 @@ import { DesktopAppSection } from "./desktop";
 import { McpConfig } from "./McpConfig";
 import { ConfigButton, ConfigSwitch } from "./SettingsUi";
 import { ArtifactsSettingRow } from "./ArtifactsSettingRow";
+import { ChatsSettingsSection } from "./ChatsSettingsSection";
+import { AppearanceSettings } from "./AppearanceSettings";
 
 interface Props {
   cwd: string | null;
@@ -48,6 +49,9 @@ interface Props {
   onSessionReloaded: () => void;
   quoteSelectionEnabled: boolean;
   onQuoteSelectionChange: (enabled: boolean) => void;
+  /** The completion chime; it used to be a speaker button in the composer row. */
+  soundEnabled: boolean;
+  onSoundToggle: () => void;
   /** The page's trust status for `cwd`; Settings › MCP reloads when it changes, as after trusting. */
   projectTrust?: ProjectTrustStatus | null;
   /** Opens the page's trust dialog for `cwd`, above Settings; Settings › MCP's trust notice offers it. */
@@ -71,6 +75,7 @@ export function SettingsSectionIcon({ section, size = 16, strokeWidth = 1.8 }: {
   };
 
   if (section === "general") return <svg {...common}><path d="M20 7h-9M14 17H5" /><circle cx="7" cy="7" r="3" /><circle cx="17" cy="17" r="3" /></svg>;
+  if (section === "appearance") return <svg {...common}><path d="m14 3 7 7-9 9H5v-7l9-9ZM12 5l7 7M5 19l-2 2M3 15v6h6" /></svg>;
   if (section === "models") return <svg {...common}><rect x="4" y="4" width="16" height="16" rx="2" /><rect x="9" y="9" width="6" height="6" /><path d="M9 1v3M15 1v3M9 20v3M15 20v3M20 9h3M20 15h3M1 9h3M1 15h3" /></svg>;
   if (section === "skills") return <svg {...common}><path d="m12 2-10 5 10 5 10-5-10-5Z" /><path d="m2 12 10 5 10-5M2 17l10 5 10-5" /></svg>;
   if (section === "agents") return <svg {...common} className="settings-section-icon is-agent"><rect x="5" y="7" width="14" height="11" rx="2" /><path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" /></svg>;
@@ -84,15 +89,15 @@ function GeneralSettings({
   onSessionReloaded,
   quoteSelectionEnabled,
   onQuoteSelectionChange,
+  soundEnabled,
+  onSoundToggle,
   onBusyChange,
-}: Pick<Props, "sessionId" | "onSessionReloaded" | "quoteSelectionEnabled" | "onQuoteSelectionChange"> & {
+}: Pick<Props, "sessionId" | "onSessionReloaded" | "quoteSelectionEnabled" | "onQuoteSelectionChange" | "soundEnabled" | "onSoundToggle"> & {
   onBusyChange: (busy: boolean) => void;
 }) {
   const { locale, setLocale, supportedLocales, t } = useI18n();
-  const { preference, setThemePreference } = useTheme();
   const { mode: diffViewMode, setMode: setDiffViewMode } = useDiffViewMode();
   const { width: chatContentWidth, setWidth: setChatContentWidth, fontSize, setFontSize } = useChatAppearance();
-  const desktop = isTauriDesktop();
   const enterSendMode = useEnterSendMode();
   const [shellSettings, setShellSettings] = useState<ToolSettingsResponse | null>(null);
   const [shellSaving, setShellSaving] = useState(false);
@@ -101,8 +106,6 @@ function GeneralSettings({
   const [webAuthEnabled, setWebAuthEnabled] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [logoutError, setLogoutError] = useState("");
-  const [customCssBusy, setCustomCssBusy] = useState(false);
-  const [customCssError, setCustomCssError] = useState<string | null>(null);
 
   useEffect(() => {
     setThinkingExpanded(isThinkingExpandedByDefault());
@@ -163,60 +166,18 @@ function GeneralSettings({
     }
   };
 
-  const openCustomCss = async () => {
-    setCustomCssBusy(true);
-    setCustomCssError(null);
-    try {
-      const response = await fetch("/api/custom-css", { method: "POST" });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const data = (await response.json()) as { path?: string };
-      if (!data.path) throw new Error("Missing path in response");
-      await openPathNative(data.path);
-    } catch (error) {
-      console.error("Failed to open custom.css:", error);
-      setCustomCssError(t("appSettings.customCssOpenError"));
-    } finally {
-      setCustomCssBusy(false);
-    }
-  };
 
   return (
     <div className="settings-general">
       <h2 className="settings-general-title">{t("settings.general")}</h2>
 
-      <div className="settings-general-intro">
-        <p className="settings-general-tagline">{t("appSettings.tagline", { product: PRODUCT_NAME })}</p>
-        <p className="settings-general-tagline">{t("appSettings.taglineDetails")}</p>
-      </div>
-
       <div className="settings-general-columns">
         <div className="settings-general-col">
-          <AppUpdatesSection onBusyChange={onBusyChange} />
-
-          <section className="settings-general-section">
-            <h3 className="settings-general-heading">{t("common.language")}</h3>
-            <div role="radiogroup" aria-label={t("common.language")} className="settings-language-options">
-              {supportedLocales.map((plugin) => {
-                const selected = locale === plugin.id;
-                return (
-                  <button
-                    key={plugin.id}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    onClick={() => setLocale(plugin.id as typeof locale)}
-                    className="settings-language-option"
-                  >
-                    <span className="settings-language-radio">
-                      {selected && <span className="settings-language-radio-dot" />}
-                    </span>
-                    <span className="settings-language-label">{plugin.label}</span>
-                    <span className="settings-language-code">{plugin.id}</span>
-                  </button>
-                );
-              })}
-            </div>
+          <section className="settings-general-section settings-general-intro settings-general-overview">
+            <p className="settings-general-tagline">{t("appSettings.tagline", { product: PRODUCT_NAME })}</p>
+            <p className="settings-general-tagline">{t("appSettings.taglineDetails")}</p>
           </section>
+          <AppUpdatesSection onBusyChange={onBusyChange} />
 
           <section className="settings-general-section">
             <h3 className="settings-general-heading">{t("settings.chat")}</h3>
@@ -296,6 +257,14 @@ function GeneralSettings({
                   onChange={onQuoteSelectionChange}
                 />
               </div>
+              <div className="settings-chat-option settings-chat-switch-option">
+                <span>{t("settings.completionSound")}</span>
+                <ConfigSwitch
+                  checked={soundEnabled}
+                  label={t("settings.completionSound")}
+                  onChange={(enabled) => { if (enabled !== soundEnabled) onSoundToggle(); }}
+                />
+              </div>
               <ArtifactsSettingRow />
               <div className="settings-chat-option settings-chat-switch-option" role="radiogroup" aria-label={t("settings.enterSendMode")}>
                 <span>{t("settings.enterSendMode")}</span>
@@ -331,7 +300,7 @@ function GeneralSettings({
                     type="button"
                     role="radio"
                     aria-checked={diffViewMode === "split"}
-                    className={`config-button config-button-small ${diffViewMode === "split" ? "config-button-primary" : "config-button-secondary"}`}
+                    className="settings-choice-option"
                     onClick={() => setDiffViewMode("split")}
                   >
                     {t("appSettings.diffViewModeSplit")}
@@ -340,7 +309,7 @@ function GeneralSettings({
                     type="button"
                     role="radio"
                     aria-checked={diffViewMode === "unified"}
-                    className={`config-button config-button-small ${diffViewMode === "unified" ? "config-button-primary" : "config-button-secondary"}`}
+                    className="settings-choice-option"
                     onClick={() => setDiffViewMode("unified")}
                   >
                     {t("appSettings.diffViewModeUnified")}
@@ -349,53 +318,33 @@ function GeneralSettings({
               </div>
             </div>
           </section>
+          <ChatsSettingsSection />
         </div>
 
         <div className="settings-general-col">
           <section className="settings-general-section">
-            <h3 className="settings-general-heading">{t("settings.appearance")}</h3>
-            <div role="radiogroup" aria-label={t("settings.appearance")} className="settings-theme-options">
-              {THEME_OPTIONS.map((option) => {
-                const selected = preference === option.id;
+            <h3 className="settings-general-heading">{t("common.language")}</h3>
+            <div role="radiogroup" aria-label={t("common.language")} className="settings-language-options">
+              {supportedLocales.map((plugin) => {
+                const selected = locale === plugin.id;
                 return (
-                  <label
-                    key={option.id}
-                    className="settings-theme-option"
+                  <button
+                    key={plugin.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={selected}
+                    onClick={() => setLocale(plugin.id as typeof locale)}
+                    className="settings-language-option"
                   >
-                    <input
-                      type="radio"
-                      name="theme"
-                      value={option.id}
-                      checked={selected}
-                      onChange={() => setThemePreference(option.id)}
-                      className="sr-only"
-                    />
-                    <ThemeIcon preference={option.id} />
-                    <span className="settings-theme-option-label">{t(option.label)}</span>
-                  </label>
+                    <span className="settings-language-radio">
+                      {selected && <span className="settings-language-radio-dot" />}
+                    </span>
+                    <span className="settings-language-label">{plugin.label}</span>
+                    <span className="settings-language-code">{plugin.id}</span>
+                  </button>
                 );
               })}
             </div>
-            <div className="settings-option-list">
-              <div className="settings-option">
-                <span className="settings-option-text">
-                  <span className="settings-option-title">{t("appSettings.customCss")}</span>
-                  <span className="settings-option-hint">{t("appSettings.customCssHint")}</span>
-                </span>
-                {desktop && (
-                  <ConfigButton
-                    variant="secondary"
-                    size="small"
-                    className="settings-option-action"
-                    disabled={customCssBusy}
-                    onClick={() => void openCustomCss()}
-                  >
-                    {customCssBusy ? t("appSettings.customCssOpening") : t("appSettings.customCssOpen")}
-                  </ConfigButton>
-                )}
-              </div>
-            </div>
-            {customCssError && <p role="alert" className="settings-general-error">{customCssError}</p>}
           </section>
 
           <DesktopAppSection />
@@ -436,6 +385,7 @@ function GeneralSettings({
 
 export const SETTINGS_SECTION_ITEMS: { id: SettingsSection; labelKey: string; requiresProject: boolean }[] = [
   { id: "general", labelKey: "settings.general", requiresProject: false },
+  { id: "appearance", labelKey: "settings.appearance", requiresProject: false },
   { id: "models", labelKey: "common.models", requiresProject: false },
   { id: "skills", labelKey: "common.skills", requiresProject: true },
   { id: "agents", labelKey: "common.agents", requiresProject: true },
@@ -451,6 +401,8 @@ export function SettingsPanel({
   onSessionReloaded,
   quoteSelectionEnabled,
   onQuoteSelectionChange,
+  soundEnabled,
+  onSoundToggle,
   projectTrust,
   onOpenTrustDialog,
   onProjectTrustChanged,
@@ -472,6 +424,9 @@ export function SettingsPanel({
   const [busy, setBusy] = useState(false);
 
   useEffect(() => setLastSettingsSection(initialSection), [initialSection]);
+
+  // Per-platform dialog styling (native-theme.css) keys off <html data-platform>; set before paint.
+  useLayoutEffect(() => { applyUiPlatform(); }, []);
 
   // Bubble phase, unless something nearer handled the key. The trust dialog,
   // which opens above Settings, takes Escape in the capture phase and stops it,
@@ -524,18 +479,13 @@ export function SettingsPanel({
       <div className="settings-dialog-surface">
         <div className="settings-dialog-header">
           <strong className="settings-dialog-title">{t("settings.title")}</strong>
-          <select
-            aria-label={t("settings.title")}
+          <AppSelect
+            aria-label={t("settings.sectionPicker")}
             value={section}
-            onChange={(event) => activateSection(event.target.value as SettingsSection)}
+            onValueChange={(value) => activateSection(value as SettingsSection)}
             className="settings-mobile-section-picker"
-          >
-            {sections.map((item) => (
-              <option key={item.id} value={item.id} disabled={item.requiresProject && !cwd}>
-                {item.label}
-              </option>
-            ))}
-          </select>
+            options={sections.map((item) => ({ value: item.id, label: item.label, disabled: item.requiresProject && !cwd }))}
+          />
           <nav aria-label={t("settings.title")} className="settings-section-tabs">
             {sections.map((item) => {
               const selected = section === item.id;
@@ -560,7 +510,8 @@ export function SettingsPanel({
         </div>
 
         <main className="settings-dialog-main">
-          {sectionHost("general", <GeneralSettings sessionId={sessionId} onSessionReloaded={onSessionReloaded} quoteSelectionEnabled={quoteSelectionEnabled} onQuoteSelectionChange={onQuoteSelectionChange} onBusyChange={setBusy} />)}
+          {sectionHost("general", <GeneralSettings sessionId={sessionId} onSessionReloaded={onSessionReloaded} quoteSelectionEnabled={quoteSelectionEnabled} onQuoteSelectionChange={onQuoteSelectionChange} soundEnabled={soundEnabled} onSoundToggle={onSoundToggle} onBusyChange={setBusy} />)}
+          {sectionHost("appearance", <AppearanceSettings />)}
           {sectionHost("models", <ModelsConfig embedded cwd={cwd} onClose={onClose} onOpenMcp={() => activateSection("mcp")} />)}
           {/* Visited sections stay mounted, so the ones whose answer depends on trust take the page's
               status and load again in place when trusting from Settings › MCP changes it. */}

@@ -111,6 +111,9 @@ export function ModelSelector({
     setFilter("");
   }, [locked]);
 
+  // The composer toolbar draws every control icon at 14px; the form field keeps its smaller glyph.
+  const chipIconSize = variant === "field" ? 11 : 14;
+
   const buttonStyle: CSSProperties = variant === "field"
     ? {
         display: "flex",
@@ -157,8 +160,6 @@ export function ModelSelector({
   };
 
   const saveDefault = (option: ModelSelectorOption) => {
-    setOpen(false);
-    setFilter("");
     onSetDefault?.(option.provider, option.modelId);
   };
 
@@ -208,11 +209,11 @@ export function ModelSelector({
         }}
       >
         {busy ? (
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ animation: "spin 0.8s linear infinite", flexShrink: 0 }} aria-hidden="true">
+          <svg width={chipIconSize} height={chipIconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" style={{ animation: "spin 0.8s linear infinite", flexShrink: 0 }} aria-hidden="true">
             <path d="M21 12a9 9 0 1 1-2.64-6.36" />
           </svg>
         ) : (
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
+          <svg width={chipIconSize} height={chipIconSize} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={variant === "field" ? 2 : 1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ flexShrink: 0 }}>
             <rect x="4" y="4" width="16" height="16" rx="2" />
             <rect x="9" y="9" width="6" height="6" />
             <line x1="9" y1="1" x2="9" y2="4" /><line x1="15" y1="1" x2="15" y2="4" />
@@ -246,6 +247,7 @@ export function ModelSelector({
         return (
           <div
             ref={panelRef}
+            className="native-popover app-menu"
             role="listbox"
             aria-label={ariaLabel}
             style={{
@@ -292,7 +294,7 @@ export function ModelSelector({
                 />
               </div>
             )}
-            <div style={{ minHeight: 0, overflowY: "auto" }}>
+            <div className="app-menu-list">
               {onClear && !filter.trim() && (
                 <SelectorRow active={!value} gutter={Boolean(onSetDefault)} onSelect={() => {
                   setOpen(false);

@@ -9,14 +9,14 @@ const jiti = createJiti(import.meta.url, {
 });
 const React = await jiti.import("react");
 const { renderToStaticMarkup } = await jiti.import("react-dom/server");
-const { I18nProvider } = await jiti.import("@/hooks/useI18n.tsx");
+const { I18nProvider } = await jiti.import("@/hooks/useI18n");
 const { McpSignInRow } = await jiti.import("./McpSignIn.tsx");
-const { enLocale } = await jiti.import("@/lib/i18n/messages/en.ts");
-const source = await readFile(new URL("./McpSignIn.tsx", import.meta.url), "utf8");
-const mcpConfigSource = await readFile(new URL("./McpConfig.tsx", import.meta.url), "utf8");
+const { englishMessages } = await jiti.import("@/lib/i18n/locale-plugins.ts");
+const source = (await readFile(new URL("./McpSignIn.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const mcpConfigSource = (await readFile(new URL("./McpConfig.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
 
 const h = React.createElement;
-const messages = enLocale.messages;
+const messages = englishMessages;
 
 function decode(html) {
   return html.replace(/&quot;/g, '"').replace(/&#x27;/g, "'").replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">");

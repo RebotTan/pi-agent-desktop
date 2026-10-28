@@ -1,13 +1,9 @@
 import assert from "node:assert/strict";
+import { checkComposerGeometry } from "./composer-geometry.mjs";
+import { openSettingsSection } from "./settings-navigation.mjs";
 
-// The fork's sidebar gear opens a section menu (General / Models / Skills /
-// Sub-agents / Plugins / Desktop) instead of landing on the appearance
-// controls, so every "open settings" step goes through it.
 async function openGeneralSettings(page) {
-  await page.getByRole("button", { name: "Settings", exact: true }).click();
-  const general = page.locator(".settings-entry-menu button", { hasText: "General" });
-  await general.waitFor();
-  await general.click();
+  await openSettingsSection(page, "General");
   await page.locator(".settings-general").waitFor();
 }
 
@@ -44,6 +40,7 @@ export async function checkChatAppearanceReset(page) {
 
 export async function checkChatAppearance(page) {
   await page.setViewportSize({ width: 2560, height: 1100 });
+  await checkComposerGeometry(page);
   const textarea = page.locator(".chat-input-textarea");
   const openSettings = () => openGeneralSettings(page);
   const closeSettings = () => page.keyboard.press("Escape");
@@ -122,5 +119,6 @@ export async function checkChatAppearance(page) {
   await textarea.fill("A mobile draft wraps and resizes within the available space.");
   await fittedHeight();
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+  await checkComposerGeometry(page);
   console.log("PASS: chat appearance persistence, typography, draft resizing, and short settings panels");
 }

@@ -72,7 +72,6 @@ function MenuPanel({
     if (position && autoFocus) panelRef.current?.focus({ preventScroll: true });
   }, [position, autoFocus, panelRef]);
 
-  const hasChecks = entries.some((entry) => entry.kind !== "separator" && entry.kind !== "submenu" && entry.kind !== "predefined" && entry.checked !== undefined);
 
   const focusable = (): HTMLButtonElement[] =>
     Array.from(panelRef.current?.querySelectorAll<HTMLButtonElement>(":scope > button:not(:disabled)") ?? []);
@@ -103,7 +102,7 @@ function MenuPanel({
   return (
     <div
       ref={panelRef}
-      className="dom-context-menu native-popover"
+      className="dom-context-menu native-popover app-menu"
       role="menu"
       aria-label={label}
       tabIndex={-1}
@@ -133,7 +132,6 @@ function MenuPanel({
               // A click with no pointer (Enter, ArrowRight) has `detail === 0`.
               onClick={(event) => onSubmenu(index, event.currentTarget.getBoundingClientRect(), event.detail === 0)}
             >
-              {hasChecks && <span className="dom-context-menu-check" />}
               <span className="dom-context-menu-label">{entry.label}</span>
               <span className="dom-context-menu-chevron" aria-hidden="true">›</span>
             </button>
@@ -150,7 +148,6 @@ function MenuPanel({
             onMouseEnter={onSubmenu ? () => onSubmenu(-1, null) : undefined}
             onClick={() => onItem(entry)}
           >
-            {hasChecks && <span className="dom-context-menu-check" aria-hidden="true">{entry.checked ? "✓" : ""}</span>}
             <span className="dom-context-menu-label">{entry.label}</span>
           </button>
         );

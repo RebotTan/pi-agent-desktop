@@ -278,7 +278,7 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
         )}
       </button>
 
-      <AnimatedDropdown className="native-popover" open={dropdownOpen} style={panelStyle}>
+      <AnimatedDropdown className="native-popover app-menu" open={dropdownOpen} style={panelStyle}>
         {showProjectFilter && (
           <div style={{ padding: "6px 8px", borderBottom: "var(--hairline) solid var(--border)" }}>
             <input
@@ -313,6 +313,7 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
             <button
               key={project}
               className="project-picker-option"
+              aria-current={project === selectedProject ? "true" : undefined}
               onClick={() => {
                 onSelectCwd(project);
                 closeDropdown();
@@ -337,12 +338,6 @@ export function ProjectPicker({ recentProjects, selectedCwd, selectedProject, ho
               }}
               title={project}
             >
-              {project === selectedProject && (
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="var(--accent)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                  <polyline points="1.5 5 4 7.5 8.5 2.5" />
-                </svg>
-              )}
-              {project !== selectedProject && <span style={{ width: 10, flexShrink: 0 }} />}
               <PathLabel text={displayCwd(project, homeDir)} style={{ flex: 1 }} />
             </button>
           ))}

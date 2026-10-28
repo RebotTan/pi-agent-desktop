@@ -1,17 +1,19 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
+import { createJiti } from "jiti";
 
-const templateSource = await readFile(new URL("./SettingsUi.tsx", import.meta.url), "utf8");
-const cssSource = await readFile(new URL("../app/settings.css", import.meta.url), "utf8");
-const globalCssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
-const layoutSource = await readFile(new URL("../app/layout.tsx", import.meta.url), "utf8");
-const enSource = await readFile(new URL("../lib/i18n/messages/en.ts", import.meta.url), "utf8");
-const zhSource = await readFile(new URL("../lib/i18n/messages/zh-CN.ts", import.meta.url), "utf8");
+const templateSource = (await readFile(new URL("./SettingsUi.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const cssSource = (await readFile(new URL("../app/settings.css", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const globalCssSource = (await readFile(new URL("../app/globals.css", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const layoutSource = (await readFile(new URL("../app/layout.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const jiti = createJiti(import.meta.url);
+const { englishMessages: enMessages, forkLocalePlugins } = await jiti.import("../lib/i18n/locale-plugins.ts");
+const zhMessages = Object.fromEntries(forkLocalePlugins.map(({ id, messages }) => [id, messages]))["zh-CN"];
 const configSources = await Promise.all(
   ["ModelsConfig", "SkillsConfig", "AgentsConfig", "PluginsConfig", "McpConfig"].map(async (name) => [
     name,
-    await readFile(new URL(`./${name}.tsx`, import.meta.url), "utf8"),
+    (await readFile(new URL(`./${name}.tsx`, import.meta.url), "utf8")).replace(/\r\n/g, "\n"),
   ]),
 );
 
@@ -117,11 +119,11 @@ test("skill scope group labels are localized", () => {
   const skillsSource = Object.fromEntries(configSources).SkillsConfig;
   for (const scope of ["global", "project", "path"]) {
     assert.match(skillsSource, new RegExp(`t\\("skills\\.scope\\.${scope}"\\)`));
-    assert.match(enSource, new RegExp(`"skills\\.scope\\.${scope}":`));
-    assert.match(zhSource, new RegExp(`"skills\\.scope\\.${scope}":`));
+    assert.ok(`skills.scope.${scope}` in enMessages);
+    assert.ok(`skills.scope.${scope}` in zhMessages);
   }
-  assert.match(zhSource, /"skills\.scope\.global": "全局"/);
-  assert.match(zhSource, /"skills\.scope\.project": "项目"/);
+  assert.equal(zhMessages["skills.scope.global"], "全局");
+  assert.equal(zhMessages["skills.scope.project"], "项目");
 });
 
 test("all subpanel detail panes share one content hierarchy", () => {
@@ -219,7 +221,7 @@ test("every add pane chooses its scope in one place: the save target under its t
     SkillsConfig: sources.SkillsConfig.match(/function AddSkillPanel[\s\S]*?\n\}\n/)?.[0] ?? "",
     PluginsConfig: sources.PluginsConfig.match(/function AddPluginPanel[\s\S]*?\n\}\n/)?.[0] ?? "",
     AgentsConfig: sources.AgentsConfig,
-    McpAddServer: await readFile(new URL("./McpAddServer.tsx", import.meta.url), "utf8"),
+    McpAddServer: (await readFile(new URL("./McpAddServer.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n"),
   };
   for (const [name, source] of Object.entries(panes)) {
     assert.ok(source, name);
@@ -266,7 +268,7 @@ test("plugin and skill panel words come from the locale files", () => {
   // The catalog link sits at the right of the title, as in every add pane, and nowhere else.
   assert.match(skills, /<ConfigAddSourceHeading\s+title=\{t\("i18n\.addSkill"\)\}\s+catalogs=\{\[\{ href: "https:\/\/skills\.sh", label: "skills\.sh" \}\]\}/);
   assert.doesNotMatch(skills, /href="https:\/\/skills\.sh"|skills\.discoverHint/);
-  for (const source of [enSource, zhSource]) {
+  for (const source of [JSON.stringify(enMessages), JSON.stringify(zhMessages)]) {
     for (const key of ["config.source", "config.examples", "config.name", "config.saveTo", "plugins.diagnostic", "plugins.diagnostics"]) {
       assert.match(source, new RegExp(`"${key.replace(".", "\\.")}":`));
     }

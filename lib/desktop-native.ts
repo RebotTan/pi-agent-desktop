@@ -1,4 +1,5 @@
 import { isTauriDesktop } from "@/lib/desktop-updater";
+import { normalizeInstalledFonts, type InstalledFont } from "@/lib/installed-fonts";
 import {
   DESKTOP_API_TOKEN_HEADER,
   MAX_DESKTOP_SAVE_BYTES,
@@ -54,6 +55,16 @@ async function desktopApiHeaders(initial?: HeadersInit): Promise<Headers> {
   const headers = new Headers(initial);
   headers.set(DESKTOP_API_TOKEN_HEADER, await getDesktopApiToken());
   return headers;
+}
+
+export async function listInstalledFontsNative(): Promise<InstalledFont[]> {
+  if (!isTauriDesktop()) throw new Error("Installed fonts are only available in the desktop app.");
+  const response = await fetch("/api/desktop/fonts", { headers: await desktopApiHeaders(), cache: "no-store" });
+  if (!response.ok) throw new Error("Could not read installed fonts");
+  const data = await response.json();
+  const fonts = normalizeInstalledFonts(data.fonts);
+  if (!fonts.length) throw new Error("No installed fonts found");
+  return fonts;
 }
 
 async function readResponseBytesWithinLimit(
@@ -407,6 +418,26 @@ export async function showMainWindowNative(): Promise<void> {
   if (!isTauriDesktop()) return;
   const { invoke } = await import("@tauri-apps/api/core");
   await invoke("show_main_window_cmd");
+}
+
+let desktopReadyReported = false;
+
+/**
+ * Tells the shell the first screen is on the page, which shows the main window
+ * (it is built hidden so the user never sees an empty webview). Reports once
+ * per page load; the shell shows the window by itself shortly after the page
+ * load event even if this never arrives.
+ */
+export async function reportDesktopReadyNative(source: string): Promise<void> {
+  if (desktopReadyReported || !isTauriDesktop()) return;
+  desktopReadyReported = true;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const sincePageStart = Math.round(performance.now());
+    await invoke("app_ready", { reason: `${source}, page +${sincePageStart}ms` });
+  } catch {
+    // The shell's own fallback shows the window.
+  }
 }
 
 /** Relaunch the desktop shell and its packaged local server. */

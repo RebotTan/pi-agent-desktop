@@ -15,8 +15,9 @@ import {
 import { cacheSessionPath, getLatestModelChange, getLatestResponseModel, getSessionListVersion, invalidateSessionListCache, readLatestSessionEntryId, resolveSessionPath } from "./session-reader";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
 import { notifySessionComplete } from "./web-push";
+import { isVerboseLogging } from "../bin/pi-web-options.js";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
-import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
+import type { LoadExtensionsResult, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import { PRODUCT_NAME } from "./branding";
 import type { AgentSessionLike, ExtensionUiContextLike, NavigateTreeOptions, ToolInfo } from "./pi-types";
 import type {
@@ -30,6 +31,12 @@ import type {
   SessionMessageEntry,
 } from "./types";
 import { getUsageCostBreakdown } from "./usage-breakdown";
+import {
+  createSessionReplacementActions,
+  UNSAVED_SESSION_FORK_ERROR,
+  writeForkedSession,
+  type ExtensionCommandContextActionsLike,
+} from "./session-replacement";
 import { createHeadlessCustomUiTui, DEFAULT_CUSTOM_UI_COLUMNS, type HeadlessCustomUiTui } from "./custom-ui-terminal";
 import {
   createSubagentExtension,
@@ -58,6 +65,30 @@ import {
   readSessionToolSelection,
   validateSessionToolSelection,
 } from "./session-tool-selection";
+import {
+  createChatFolder,
+  ensureChatCwd,
+  isChatFolderPath,
+  isChatRootPath,
+  isChatWorkspacePath,
+} from "./chat-workspace";
+import { appendChatUnlock, readChatUnlocked } from "./chat-unlock";
+import { saveAttachedFilesToFolder } from "./chat-attachment-files";
+import { deriveSessionPolicy, type SessionPolicy } from "./session-policy";
+import { chatInstructionsSection, readChatSettings, resolveChatStartDefaults } from "./chat-settings";
+import { ChatFileGrants, isNetworkExposedServer } from "./chat-file-access";
+import { createChatDownloadsExtension } from "./chat-downloads-tool";
+import {
+  CHAT_FOLDER_TOOL_NAMES,
+  CHAT_READ_TOOL_NAME,
+  chatBlockedToolNames,
+  chatWorkspacePrompt,
+  createChatWorkspaceExtension,
+  isChatToolAllowed,
+  withoutAgentDelegation,
+} from "./chat-workspace-policy";
+import { ComposerQueue } from "./composer-queue";
+import type { PendingComposerMessage } from "./composer-queue-types";
 
 // ============================================================================
 // Types
@@ -112,30 +143,16 @@ type ExtensionUiRequestBody = Record<string, unknown> & {
   expiresAt?: number;
 };
 
-/** An extension's `withSession()` callback; it receives the target's ReplacedSessionContext. */
-type ReplacedSessionCallback = (ctx: unknown) => Promise<void>;
-
-type ExtensionCommandContextActionsLike = {
-  waitForIdle: () => Promise<void>;
-  newSession: (options?: {
-    parentSession?: string;
-    setup?: (sessionManager: SessionManager) => Promise<void>;
-    withSession?: ReplacedSessionCallback;
-  }) => Promise<{ cancelled: boolean }>;
-  fork: (entryId: string, options?: {
-    position?: "before" | "at";
-    withSession?: ReplacedSessionCallback;
-  }) => Promise<{ cancelled: boolean }>;
-  navigateTree: (targetId: string, options?: NavigateTreeOptions) => Promise<{ cancelled: boolean }>;
-  switchSession: (sessionPath: string, options?: {
-    withSession?: ReplacedSessionCallback;
-  }) => Promise<{ cancelled: boolean }>;
-  reload: () => Promise<void>;
-};
 
 type AgentSessionWrapperOptions = {
   exactSystemPrompt?: () => string;
   chatOnly?: boolean;
+  /** A non-project chat. Chats reject tool commands, and shell commands unless unlocked. */
+  chatWorkspace?: boolean;
+  /** The chat owns a folder: its file tools work inside it (a legacy chat has none). */
+  chatFolder?: boolean;
+  /** The user let this chat use their computer. */
+  chatUnlocked?: boolean;
   onAgentRunComplete?: AgentRunCompleteListener;
   suppressCompletionNotifications?: boolean;
   /** Connects the session's MCP servers before a prompt starts a run, and lets go of them when it closes (lib/mcp-host.ts). */
@@ -204,10 +221,6 @@ export function resolveSessionShutdownDeadlineMs(
 const SESSION_SHUTDOWN_DEADLINE_MS = resolveSessionShutdownDeadlineMs();
 
 const SESSION_REPLACEMENT_COMMAND_TYPES = new Set(["fork", "clone"]);
-// pi writes a session file at the first user message, so a session with no
-// conversation on disk has nothing to copy from yet.
-const UNSAVED_SESSION_FORK_ERROR =
-  "This session has not been saved yet. Send a message before forking it.";
 const COMMANDS_ALLOWED_DURING_SESSION_REPLACEMENT = new Set([
   "get_state",
   "get_session_stats",
@@ -228,6 +241,15 @@ export interface RpcSessionStartOptions {
 }
 
 const CODING_TOOL_NAMES = ["read", "bash", "powershell", "edit", "write", "grep", "find", "ls"];
+/** The names a chat may keep active (lib/chat-workspace-policy.ts decides which tools those are). */
+function restrictToChatTools(session: AgentSessionLike, names: readonly string[], hasFolder: boolean): string[] {
+  const registered = new Map(session.getAllTools().map((tool) => [tool.name, tool]));
+  const extra = new Set(readChatSettings().allowedTools);
+  return names.filter((name) => isChatToolAllowed(registered.get(name) ?? { name }, extra, hasFolder));
+}
+
+// A tool that hands work to another agent. A chat loads no extension that registers one.
+const CHAT_DELEGATION_TOOL_NAMES: ReadonlySet<string> = new Set(SUBAGENT_CONTROL_TOOL_NAMES);
 const THINKING_LEVEL_NAMES = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
 // Extensions require a complete Theme, while the web UI applies its own styling.
@@ -322,7 +344,9 @@ export class AgentSessionWrapper {
   private extensionBindingPromise: Promise<void> | null = null;
   private extensionBindingError: unknown = null;
   private readonly exactSystemPrompt?: () => string;
-  private readonly chatOnly: boolean;
+  /** What this session may reach; computed once at start (lib/session-policy.ts). */
+  private readonly policy: SessionPolicy;
+  private readonly chatFolder: boolean;
   private readonly onAgentRunComplete?: AgentRunCompleteListener;
   private readonly suppressCompletionNotifications: boolean;
   private readonly mcpHost?: Pick<McpHost, "prepareForPrompt" | "dispose">;
@@ -343,16 +367,34 @@ export class AgentSessionWrapper {
   // Set when shutdown() starts. The SDK session stays usable until destroy(),
   // but lookups must treat the wrapper as gone from this point on.
   private closing = false;
+  private readonly composerQueue: ComposerQueue;
 
   constructor(
     public readonly inner: AgentSessionLike,
     options: AgentSessionWrapperOptions = {},
   ) {
     this.exactSystemPrompt = options.exactSystemPrompt;
-    this.chatOnly = options.chatOnly ?? false;
+    this.policy = deriveSessionPolicy({
+      chatOnly: options.chatOnly,
+      chatWorkspace: options.chatWorkspace,
+      chatUnlocked: options.chatUnlocked,
+    });
+    this.chatFolder = options.chatFolder === true;
     this.onAgentRunComplete = options.onAgentRunComplete;
     this.suppressCompletionNotifications = options.suppressCompletionNotifications ?? false;
     this.mcpHost = options.mcpHost;
+    this.composerQueue = new ComposerQueue(inner.sessionId, {
+      canDeliver: () => this.isAlive() && !this.isRunning(),
+      deliver: (item, steer) => this.send({
+        type: "prompt", message: item.message, images: item.images,
+        streamingBehavior: steer ? "steer" : "followUp",
+      }),
+      changed: (items, pendingVersion) => this.emit({ type: "composer_queue_update", items, pendingVersion }),
+      failed: error => this.emit({
+        type: "prompt_error",
+        errorMessage: error instanceof Error ? error.message : String(error),
+      }),
+    });
   }
 
   get sessionId(): string {
@@ -418,8 +460,37 @@ export class AgentSessionWrapper {
     return this.pendingPromptPreview;
   }
 
+  /** A project session pinned to an empty tool list (exact prompt, nothing loaded). */
+  private get chatOnly(): boolean {
+    return this.policy.kind === "chat-only";
+  }
+
+  /** A non-project chat that is still limited (no shell; files only in its own folder, if it has one). */
+  private get chatWorkspace(): boolean {
+    return this.policy.kind === "chat";
+  }
+
+  /** A chat the user let use their computer. */
+  private get chatUnlocked(): boolean {
+    return this.policy.kind === "chat-unlocked";
+  }
+
   isChatOnly(): boolean {
     return this.chatOnly;
+  }
+
+  /** Limited chat: no shell, and file tools only in its own folder. */
+  isChatWorkspace(): boolean {
+    return this.chatWorkspace;
+  }
+
+  /** Any chat, limited or unlocked; a chat's tool preset is not the user's to change. */
+  isChat(): boolean {
+    return this.chatWorkspace || this.chatUnlocked;
+  }
+
+  isChatUnlocked(): boolean {
+    return this.chatUnlocked;
   }
 
   hasSuppressedCompletionNotifications(): boolean {
@@ -464,12 +535,16 @@ export class AgentSessionWrapper {
       ) {
         notifyRunningChange();
       }
-      if (event.type === "agent_settled") this.notifyAgentRunCompleteIfIdle();
+      if (event.type === "agent_settled") {
+        this.composerQueue.wake();
+        this.notifyAgentRunCompleteIfIdle();
+      }
     });
     this.resetIdleTimer();
     // A reopened wrapper may already be running (restored mid-run); make
     // connected sidebars reconcile instead of waiting for the next event.
     notifyRunningChange();
+    this.composerQueue.wake();
   }
 
   /**
@@ -494,7 +569,7 @@ export class AgentSessionWrapper {
   }
 
   private notifyAgentRunCompleteIfIdle(): void {
-    if (!this.agentRunNeedsCompletion || this.isRunning()) return;
+    if (!this.agentRunNeedsCompletion || this.isRunning() || this.composerQueue.snapshot().length) return;
     this.agentRunNeedsCompletion = false;
     if (this.suppressCompletionNotifications) return;
     try {
@@ -552,7 +627,7 @@ export class AgentSessionWrapper {
         this.inner.extensionRunner.setUIContext?.(uiContext, "rpc");
       }
       this.extensionsBound = true;
-      console.log(`[pi-web] session_start dispatched to extensions for session ${this.inner.sessionId}`);
+      if (isVerboseLogging()) console.log("[pi-web] session_start dispatched to extensions");
     })().catch((err) => {
       this.extensionBindingError = err;
       throw err;
@@ -609,7 +684,8 @@ export class AgentSessionWrapper {
 
   /** Apply a coding tool selection; `carry` defaults to the tools active now. */
   setActiveToolSelection(toolNames: string[], carry: readonly string[] = this.inner.getActiveToolNames()): void {
-    this.inner.setActiveToolsByName(resolveActiveToolNames(this.inner, toolNames, carry));
+    const names = resolveActiveToolNames(this.inner, toolNames, carry);
+    this.inner.setActiveToolsByName(this.chatWorkspace ? restrictToChatTools(this.inner, names, this.chatFolder) : names);
   }
 
   /**
@@ -624,8 +700,17 @@ export class AgentSessionWrapper {
   ): Promise<{ cancelled: boolean; aborted?: boolean }> {
     const activeBefore = this.inner.getActiveToolNames();
     const result = await this.inner.navigateTree(targetId, options);
-    if (result.cancelled || this.chatOnly) {
+    if (result.cancelled || this.chatOnly || this.chatUnlocked) {
       return { cancelled: result.cancelled, ...(result.aborted ? { aborted: true } : {}) };
+    }
+    if (this.chatWorkspace) {
+      // The target branch's transcript may declare coding tools a chat must not have.
+      const activeAfter = this.inner.getActiveToolNames();
+      this.setActiveToolSelection(
+        this.chatFolder ? [...CHAT_FOLDER_TOOL_NAMES] : [CHAT_READ_TOOL_NAME],
+        [...activeAfter, ...activeBefore.filter((name) => SESSION_TOOL_NAMES.has(name))],
+      );
+      return { cancelled: false };
     }
 
     const entries = this.inner.sessionManager.getEntries() as unknown as SessionEntry[];
@@ -792,13 +877,27 @@ export class AgentSessionWrapper {
         throw new Error("Session is being copied to a new session");
       }
 
-      if (type === "prompt" || type === "steer" || type === "follow_up") {
+      if (type === "prompt" || type === "steer" || type === "follow_up" || type === "queue_composer") {
         const imageError = validateAgentImages(command.images);
         if (imageError) throw new Error(imageError);
       }
 
       switch (type) {
+      case "queue_composer":
+        return this.composerQueue.enqueue(command.message as string, command.images as PendingComposerMessage["images"]);
+      case "take_composer_message":
+        return {
+          item: this.composerQueue.take(command.id as string),
+          pending: this.composerQueue.snapshot(), pendingVersion: this.composerQueue.version,
+        };
+      case "send_composer_message":
+        await this.composerQueue.sendNow(command.id as string);
+        return { item: null, pending: this.composerQueue.snapshot(), pendingVersion: this.composerQueue.version };
       case "prompt": {
+        // A chat's folder keeps a copy of the text files attached to the message.
+        if (this.chatFolder && typeof command.message === "string") {
+          saveAttachedFilesToFolder(this.cwd, command.message);
+        }
         // Serialize only admission. Once the preceding prompt has either
         // passed or failed preflight, the SDK can atomically decide whether
         // this submission starts a run or joins its streaming queue.
@@ -846,6 +945,7 @@ export class AgentSessionWrapper {
             // this broadcast the last frame on the running-events stream still
             // contains the session id and the sidebar spinner never stops.
             notifyRunningChange();
+            this.composerQueue.wake();
             this.notifyAgentRunCompleteIfIdle();
           };
 
@@ -945,6 +1045,7 @@ export class AgentSessionWrapper {
         return null;
 
       case "abort":
+        this.composerQueue.pause();
         this.forceShutdownOnIdle = true;
         // Arm the forced cleanup now: the reset above ran before this flag,
         // and the final reset only runs once the SDK run has unwound.
@@ -981,10 +1082,12 @@ export class AgentSessionWrapper {
           followUpMode: this.inner.followUpMode,
           model: model ? { id: model.id, provider: model.provider } : undefined,
           messageCount: 0,
-          pendingMessageCount: this.inner.pendingMessageCount,
+          pendingMessageCount: (this.inner.pendingMessageCount ?? 0) + this.composerQueue.snapshot().length,
           queuedMessages: {
             steering: [...this.inner.getSteeringMessages()],
             followUp: [...this.inner.getFollowUpMessages()],
+            pending: this.composerQueue.snapshot(),
+            pendingVersion: this.composerQueue.version,
           },
           contextUsage: contextUsage
             ? { percent: contextUsage.percent, contextWindow: contextUsage.contextWindow, tokens: contextUsage.tokens }
@@ -1179,8 +1282,11 @@ export class AgentSessionWrapper {
       }
 
       case "get_tools": {
-        // A hidden tool is withdrawn: pi ignores it when setting the active tools.
-        const all: ToolInfo[] = this.inner.getAllTools().filter((t) => t.exposure !== "hidden");
+        // A hidden tool is withdrawn: pi ignores it when setting the active tools. A chat
+        // never lists the coding tools it blocks.
+        const all: ToolInfo[] = this.inner.getAllTools().filter((t) => (
+          t.exposure !== "hidden" && !(this.chatWorkspace && chatBlockedToolNames(this.chatFolder).has(t.name))
+        ));
         const active = new Set<string>(this.inner.getActiveToolNames());
         // The definition's description is not always what the model gets: `prepareLoadout`
         // hooks rewrite the declared ones (codemode lists its nested tools and the MCP types).
@@ -1227,6 +1333,9 @@ export class AgentSessionWrapper {
       }
 
       case "set_tools": {
+        if (this.chatWorkspace || this.chatUnlocked) {
+          throw new Error("Chats have no tools. Open a project to change the tool preset.");
+        }
         const toolNames = command.toolNames as string[];
         this.setActiveToolSelection(toolNames);
         return null;
@@ -1283,6 +1392,9 @@ export class AgentSessionWrapper {
       }
 
       case "bash": {
+        if (this.chatWorkspace) {
+          throw new Error("Shell commands are unavailable in chats. Open a project to run one.");
+        }
         if (this.pendingPromptCount > 0 || this.inner.isStreaming || this.inner.isCompacting || this.inner.isBashRunning) {
           throw new Error("Cannot run a shell command while the session is busy");
         }
@@ -1343,6 +1455,7 @@ export class AgentSessionWrapper {
   destroy(): void {
     if (!this._alive) return;
     this._alive = false;
+    this.composerQueue.dispose();
     this.disposeMcpHost();
     // Tell attached SSE listeners to drop this instance so the browser
     // EventSource errors and reconnects instead of staying OPEN on a dead wrapper.
@@ -2005,156 +2118,26 @@ export class AgentSessionWrapper {
     };
   }
 
-  /**
-   * Copies the active path up to `targetLeafId` into a new session file, or creates an empty
-   * session linked to this one when there is nothing before the fork point.
-   */
   private writeForkedSession(targetLeafId: string | null): { newSessionId: string; newSessionFile: string } {
-    const sessionManager = this.inner.sessionManager;
-    const currentSessionFile = this.inner.sessionFile;
-    if (!currentSessionFile) throw new Error("Persisted session is missing a session file");
-    const sessionDir = sessionManager.getSessionDir();
-    let newSessionFile: string;
-    let forkedManager: SessionManager;
-
-    if (!targetLeafId) {
-      // Fork before the first message: create an empty session linked to this one
-      forkedManager = SessionManager.create(sessionManager.getCwd(), sessionDir, {
-        parentSession: currentSessionFile,
-      });
-      newSessionFile = forkedManager.getSessionFile() as string;
-    } else {
-      // Fork after some history: copy path up to and including the target leaf
-      if (!existsSync(currentSessionFile)) throw new Error(UNSAVED_SESSION_FORK_ERROR);
-      forkedManager = SessionManager.open(currentSessionFile, sessionDir);
-      const forkedPath = forkedManager.createBranchedSession(targetLeafId);
-      if (!forkedPath) throw new Error("Failed to create forked session");
-      newSessionFile = forkedPath;
-    }
-
-    if (!existsSync(newSessionFile)) {
-      const header = forkedManager.getHeader();
-      if (!header) throw new Error("Forked session is missing a session header");
-      const content = [header, ...forkedManager.getEntries()]
-        .map((forkedEntry) => JSON.stringify(forkedEntry))
-        .join("\n") + "\n";
-      writeFileSync(newSessionFile, content, { encoding: "utf8", flag: "wx" });
-    }
-
-    const newSessionId = forkedManager.getSessionId();
-    cacheSessionPath(newSessionId, newSessionFile);
-    invalidateSessionListCache();
-    return { newSessionId, newSessionFile };
-  }
-
-  /*
-   * ctx.newSession / ctx.fork / ctx.switchSession from an extension command. The pi CLI
-   * replaces its single session in place (AgentSessionRuntime); Pi Web hosts many, so the
-   * target gets its own wrapper, this one finishes the command that asked for the move, and
-   * the browser follows a `session_replaced` event. `session_before_switch` and
-   * `session_before_fork` handlers can cancel, as in the CLI.
-   */
-
-  private async cancelledBySessionReplacementHook(
-    event: Exclude<Parameters<NonNullable<AgentSessionLike["extensionRunner"]["emit"]>>[0], { type: "session_shutdown" }>,
-  ): Promise<boolean> {
-    const runner = this.inner.extensionRunner;
-    if (!runner.emit || runner.hasHandlers?.(event.type) === false) return false;
-    const result = await runner.emit.call(runner, event) as { cancel?: boolean } | undefined;
-    return result?.cancel === true;
-  }
-
-  private async moveToReplacementSession(
-    sessionId: string,
-    sessionFile: string,
-    withSession: ReplacedSessionCallback | undefined,
-    started?: AgentSessionWrapper,
-  ): Promise<{ cancelled: boolean }> {
-    this.emit({ type: "session_replaced", sessionId } as unknown as AgentEvent);
-    if (withSession) {
-      const target = started ?? (await startRpcSession(sessionId, sessionFile, undefined)).session;
-      const ctx = target.inner.createReplacedSessionContext?.();
-      if (!ctx) throw new Error("This pi version cannot hand the new session to the extension");
-      await withSession(ctx);
-    }
-    return { cancelled: false };
-  }
-
-  private async newSessionForExtension(options?: Parameters<ExtensionCommandContextActionsLike["newSession"]>[0]) {
-    if (await this.cancelledBySessionReplacementHook({ type: "session_before_switch", reason: "new" })) {
-      return { cancelled: true };
-    }
-    // Unlike the CLI's /new, the browser keeps showing the model and tools picked for this
-    // session, so the new one starts with the same selection.
-    const entries = this.inner.sessionManager.getEntries() as unknown as SessionEntry[];
-    const toolNames = readSessionToolSelection(entries);
-    const model = this.inner.model;
-    const thinkingLevel = this.inner.agent.state?.thinkingLevel;
-    const { session, realSessionId } = await startRpcSession(`__ext__${randomUUID()}`, "", this.cwd, {
-      ...(toolNames !== undefined ? { toolNames } : {}),
-      ...(model ? { initialModel: { provider: model.provider, modelId: model.id }, allowInitialModelFallback: true } : {}),
-      ...(thinkingLevel && THINKING_LEVEL_NAMES.has(thinkingLevel as ThinkingLevel)
-        ? { thinkingLevel: thinkingLevel as ThinkingLevel }
-        : {}),
-      ...(options?.parentSession ? { parentSession: options.parentSession } : {}),
-    });
-    if (options?.setup) {
-      await options.setup(session.inner.sessionManager);
-      session.inner.refreshContext?.();
-    }
-    invalidateSessionListCache();
-    return this.moveToReplacementSession(realSessionId, "", options?.withSession, session);
-  }
-
-  private async forkForExtension(
-    entryId: string,
-    options?: Parameters<ExtensionCommandContextActionsLike["fork"]>[1],
-  ) {
-    const position = options?.position ?? "before";
-    if (await this.cancelledBySessionReplacementHook({ type: "session_before_fork", entryId, position })) {
-      return { cancelled: true };
-    }
-    const entry = this.inner.sessionManager.getEntry(entryId);
-    if (!entry) throw new Error("Invalid entry ID for forking");
-    let targetLeafId: string | null;
-    if (position === "at") {
-      targetLeafId = entry.id;
-    } else {
-      if (entry.type !== "message" || entry.message.role !== "user") throw new Error("Invalid entry ID for forking");
-      targetLeafId = entry.parentId ?? null;
-    }
-    if (!this.inner.sessionManager.isPersisted()) return { cancelled: true };
-    const { newSessionId, newSessionFile } = this.writeForkedSession(targetLeafId);
-    return this.moveToReplacementSession(newSessionId, newSessionFile, options?.withSession);
-  }
-
-  private async switchSessionForExtension(
-    sessionPath: string,
-    options?: Parameters<ExtensionCommandContextActionsLike["switchSession"]>[1],
-  ) {
-    if (!existsSync(sessionPath)) throw new Error(`Session file not found: ${sessionPath}`);
-    if (await this.cancelledBySessionReplacementHook({
-      type: "session_before_switch",
-      reason: "resume",
-      targetSessionFile: sessionPath,
-    })) {
-      return { cancelled: true };
-    }
-    const sessionId = SessionManager.open(sessionPath, undefined).getSessionId();
-    cacheSessionPath(sessionId, sessionPath);
-    return this.moveToReplacementSession(sessionId, sessionPath, options?.withSession);
+    return writeForkedSession(this.inner, targetLeafId);
   }
 
   private createExtensionCommandContextActions(): ExtensionCommandContextActionsLike {
+    const { newSession, fork, switchSession } = createSessionReplacementActions({
+      inner: this.inner,
+      cwd: this.cwd,
+      emit: (event) => this.emit(event as unknown as AgentEvent),
+      startSession: startRpcSession,
+    });
     return {
       waitForIdle: async () => {
         const agent = this.inner.agent as { waitForIdle?: () => Promise<void> };
         await agent.waitForIdle?.();
       },
-      newSession: (options) => this.newSessionForExtension(options),
-      fork: (entryId, options) => this.forkForExtension(entryId, options),
+      newSession,
+      fork,
       navigateTree: (targetId, options) => this.navigateTreeKeepingToolSelection(targetId, options ?? {}),
-      switchSession: (sessionPath, options) => this.switchSessionForExtension(sessionPath, options),
+      switchSession,
       reload: async () => {
         this.extensionStatuses.clear();
         this.resetExtensionWidgetsForReload();
@@ -2355,6 +2338,9 @@ export async function setRpcSessionTools(
       return setRpcSessionTools(sessionId, sessionFile, requestedToolNames);
     }
     const manager = SessionManager.open(sessionFile, undefined);
+    if (isChatWorkspacePath(manager.getCwd())) {
+      throw new Error("Chats have no tools. Open a project to change the tool preset.");
+    }
     if (readSubagentSessionResources(manager.getEntries() as unknown as SessionEntry[])) {
       throw new Error("Subagent tool selection is fixed by its profile");
     }
@@ -2366,6 +2352,9 @@ export async function setRpcSessionTools(
   }
 
   if (existing.isRunning()) throw new Error("Cannot change tools while the session is running");
+  if (existing.isChat()) {
+    throw new Error("Chats have no tools. Open a project to change the tool preset.");
+  }
   if (readSubagentSessionResources(existing.inner.sessionManager.getEntries() as unknown as SessionEntry[])) {
     throw new Error("Subagent tool selection is fixed by its profile");
   }
@@ -2405,6 +2394,53 @@ export async function setRpcSessionTools(
       ? { thinkingLevel: currentThinkingLevel as ThinkingLevel }
       : {}),
   });
+  return { session: started.session, sessionId: started.realSessionId, recreated: true };
+}
+
+/**
+ * Let one chat use the user's computer (a shell, files anywhere), or take that back. The
+ * choice is a session entry, so it outlives the process; the session restarts to apply it.
+ * Only a chat with a folder that has been saved can be unlocked, and never on a server other
+ * machines can reach.
+ */
+export async function setRpcChatUnlock(
+  sessionId: string,
+  sessionFile: string | undefined,
+  unlocked: boolean,
+): Promise<SetRpcSessionToolsResult> {
+  if (unlocked && isNetworkExposedServer()) {
+    throw new Error("A chat cannot use this computer while the server is open to other machines.");
+  }
+  const existing = getRpcSession(sessionId);
+
+  if (!existing?.isAlive()) {
+    if (!sessionFile) throw new Error("Session not found");
+    const pending = closingRpcSessionWait(sessionId) ?? getLocks().get(sessionId);
+    if (pending) {
+      await pending.catch(() => undefined);
+      return setRpcChatUnlock(sessionId, sessionFile, unlocked);
+    }
+    const manager = SessionManager.open(sessionFile, undefined);
+    if (!isChatFolderPath(manager.getCwd())) throw new Error("Only a chat with its own folder can use the computer.");
+    appendChatUnlock(manager, unlocked);
+    invalidateSessionListCache();
+    const started = await startRpcSession(sessionId, sessionFile, undefined);
+    return { session: started.session, sessionId: started.realSessionId, recreated: false };
+  }
+
+  if (existing.isRunning()) throw new Error("Wait for the chat to finish first");
+  if (!isChatFolderPath(existing.cwd)) throw new Error("Only a chat with its own folder can use the computer.");
+  if (existing.isChatUnlocked() === unlocked) return { session: existing, sessionId, recreated: false };
+  const persistedFile = existing.sessionFile && existsSync(existing.sessionFile)
+    ? existing.sessionFile
+    : undefined;
+  // pi writes a session out only once it has an assistant message; an entry added before
+  // that would be lost with the restart.
+  if (!persistedFile) throw new Error("Send a message first, then this chat can use the computer.");
+  appendChatUnlock(existing.inner.sessionManager, unlocked);
+  invalidateSessionListCache();
+  await existing.shutdown();
+  const started = await startRpcSession(sessionId, persistedFile, undefined);
   return { session: started.session, sessionId: started.realSessionId, recreated: true };
 }
 
@@ -2604,14 +2640,23 @@ export async function startRpcSession(
     sessionManager = SessionManager.open(sessionFile, undefined);
   } else {
     if (!cwd) throw new Error("cwd is required for a new session");
+    // A new chat is requested with the chat root; it gets a folder of its own.
     sessionManager = SessionManager.create(
-      cwd,
+      isChatRootPath(cwd) ? await createChatFolder() : cwd,
       undefined,
       options.parentSession ? { parentSession: options.parentSession } : undefined,
     );
   }
   const sessionCwd = sessionManager.getCwd();
-  const subagentResources = sessionFile
+  const chatWorkspace = isChatWorkspacePath(sessionCwd);
+  const chatFolder = isChatFolderPath(sessionCwd);
+  if (chatWorkspace) await ensureChatCwd(sessionCwd);
+  // Unlocking lets a chat use the computer, so it is a local choice: a server that other
+  // machines can reach never honours it.
+  const chatUnlocked = chatFolder
+    && !isNetworkExposedServer()
+    && readChatUnlocked(sessionManager.getEntries() as unknown as SessionEntry[]);
+  const subagentResources = sessionFile && !chatWorkspace
     ? readSubagentSessionResources(
         sessionManager.getEntries() as unknown as SessionEntry[],
       )
@@ -2619,14 +2664,23 @@ export async function startRpcSession(
   const persistedToolNames = subagentResources
     ? undefined
     : readSessionToolSelection(sessionManager.getEntries() as unknown as SessionEntry[]);
-  const selectedToolNames = subagentResources?.tools ?? persistedToolNames ?? requestedToolNames;
-  if (!subagentResources && persistedToolNames === undefined && requestedToolNames !== undefined) {
+  // A chat has no tool preset to pick: it loads what a project session loads, and the
+  // chat policy extension withholds the coding tools (lib/chat-workspace-policy.ts).
+  const selectedToolNames = chatWorkspace
+    ? undefined
+    : subagentResources?.tools ?? persistedToolNames ?? requestedToolNames;
+  if (!chatWorkspace && !subagentResources && persistedToolNames === undefined && requestedToolNames !== undefined) {
     appendSessionToolSelection(sessionManager, requestedToolNames);
   }
   const subagentLoadsResources = Boolean(
     subagentResources?.loadExtensions || subagentResources?.loadSkills,
   );
-  const chatOnly = selectedToolNames?.length === 0 && !subagentLoadsResources;
+  const sessionPolicy = deriveSessionPolicy({
+    chatWorkspace,
+    chatUnlocked,
+    chatOnly: selectedToolNames?.length === 0 && !subagentLoadsResources,
+  });
+  const chatOnly = sessionPolicy.kind === "chat-only";
   const finishStartingSession = trackStartingSession(sessionCwd);
   const starting = (async () => {
     // Some extensions access the SDK's global theme even outside the terminal UI.
@@ -2655,9 +2709,18 @@ export async function startRpcSession(
       ? subagentLoadsResources
         ? projectTrustReloadOptions(sessionCwd, agentDir)
         : undefined
-      : chatOnly
+      : chatOnly || chatWorkspace
         ? undefined
         : projectTrustReloadOptions(sessionCwd, agentDir);
+    // The chat policy reads the session's own skills and cwd, which exist only once the
+    // session does, so the extension reaches them through this ref.
+    // Reading a file the user names and saving to Downloads act on this computer, so they
+    // are off when the server accepts connections from other machines.
+    const chatFilesEnabled = chatWorkspace && !isNetworkExposedServer();
+    const chatGrants = chatFilesEnabled && !chatUnlocked ? new ChatFileGrants() : undefined;
+    const chatSessionRef: {
+      current?: { resourceLoader: { getSkills(): { skills: { filePath: string; baseDir: string }[] } } };
+    } = {};
     const settingsManager = SettingsManager.create(sessionCwd, agentDir);
     // Chat-only sessions and subagents that replace Pi's prompt send an exact
     // system prompt. The prompt is resolved at prompt time through this inline
@@ -2691,8 +2754,42 @@ export async function startRpcSession(
             appendSystemPrompt: subagentResources.appendSystemPrompt,
             ...(usesExactSystemPrompt ? { extensionFactories: [exactSystemPromptExtension] } : {}),
           }
+        : chatWorkspace
+          ? {
+              // Extensions, skills, prompt templates and MCP load as in a project, but no
+              // global, ancestor or project instructions may leak into a chat's prompt.
+              noContextFiles: true,
+              systemPrompt: chatWorkspacePrompt(chatFilesEnabled, { folder: chatFolder, unlocked: chatUnlocked }),
+              extensionFactories: [
+                ...(builtins?.extensions ?? []),
+                createArtifactGuideExtension(),
+                // A chat with a folder saves into it; only a legacy chat still saves to Downloads.
+                ...(chatGrants && !chatFolder
+                  ? [createChatDownloadsExtension({
+                      grants: chatGrants,
+                      confirmBeforeSaving: () => readChatSettings().confirmSave,
+                    })]
+                  : []),
+                createChatWorkspaceExtension({
+                  getSkills: () => chatSessionRef.current?.resourceLoader.getSkills().skills ?? [],
+                  getCwd: () => sessionCwd,
+                  getInstructions: () => chatInstructionsSection(readChatSettings()),
+                  getExtraTools: () => readChatSettings().allowedTools,
+                  folder: chatFolder,
+                  unrestricted: chatUnlocked,
+                  ...(chatGrants ? { grants: chatGrants } : {}),
+                }),
+              ],
+              // An unlocked chat has every tool, so extensions that hand work to an agent may load too.
+              ...(chatUnlocked
+                ? {}
+                : { extensionsOverride: (base: LoadExtensionsResult) => withoutAgentDelegation(base, CHAT_DELEGATION_TOOL_NAMES) }),
+            }
         : chatOnly
-          ? { ...CHAT_ONLY_RESOURCE_LOADER_OPTIONS, extensionFactories: [exactSystemPromptExtension] }
+          ? {
+              ...CHAT_ONLY_RESOURCE_LOADER_OPTIONS,
+              extensionFactories: [exactSystemPromptExtension],
+            }
         : {
             extensionFactories: [
               ...(builtins?.extensions ?? []),
@@ -2738,12 +2835,19 @@ export async function startRpcSession(
     const restoredModel = savedModel
       ? services.modelRuntime.getModel(savedModel.provider, savedModel.modelId)
       : undefined;
+    // A new chat may start on the model and reasoning level chosen in Settings › Chats; an
+    // explicit pick for this session still wins, and unset fields follow the global defaults.
+    const chatStart = chatWorkspace && !hasExistingMessages
+      ? resolveChatStartDefaults(readChatSettings(), scope.visible)
+      : {};
     const initial = hasExistingMessages ? null : selectInitialModelScope(scope, {
-        ...(effectiveInitialModel ? { requestedModel: effectiveInitialModel } : {}),
+        ...((effectiveInitialModel ?? chatStart.requestedModel)
+          ? { requestedModel: effectiveInitialModel ?? chatStart.requestedModel }
+          : {}),
         ...(defaultProvider && defaultModelId
           ? { defaultModel: { provider: defaultProvider, modelId: defaultModelId } }
           : {}),
-        ...(thinkingLevel ? { thinkingLevel } : {}),
+        ...((thinkingLevel ?? chatStart.thinkingLevel) ? { thinkingLevel: thinkingLevel ?? chatStart.thinkingLevel } : {}),
       });
     const startupModel = restoredModel && services.modelRuntime.hasConfiguredAuth(restoredModel.provider)
       ? restoredModel
@@ -2758,15 +2862,24 @@ export async function startRpcSession(
       ...(subagentResources ? { excludeTools: [...SUBAGENT_CONTROL_TOOL_NAMES] } : {}),
     });
 
+    chatSessionRef.current = inner;
+
     // A pinned selection replaces only the coding tools of the SDK's initial loadout, which
     // already holds the extension tools pi activates on registration and whatever
     // `defaultTools` names (such as `+codemode`), so installed extensions stay usable in
-    // Pi Web just like in the `pi` CLI.
+    // Pi Web just like in the `pi` CLI. A chat keeps `read` alone among the coding tools:
+    // its policy extension confines it to skill files, which is how a skill loads.
     if (!subagentResources && !chatOnly) {
       const initialToolNames = inner.getActiveToolNames();
-      inner.setActiveToolsByName(
-        resolveActiveToolNames(inner, selectedToolNames ?? initialToolNames, initialToolNames),
+      const chatRestricted = chatWorkspace && !chatUnlocked;
+      const activeToolNames = resolveActiveToolNames(
+        inner,
+        chatRestricted
+          ? chatFolder ? [...CHAT_FOLDER_TOOL_NAMES] : [CHAT_READ_TOOL_NAME]
+          : selectedToolNames ?? initialToolNames,
+        initialToolNames,
       );
+      inner.setActiveToolsByName(chatRestricted ? restrictToChatTools(inner, activeToolNames, chatFolder) : activeToolNames);
     }
 
     const exactSystemPrompt = subagentResources?.exactSystemPrompt !== undefined
@@ -2780,6 +2893,9 @@ export async function startRpcSession(
     const wrapper = new AgentSessionWrapper(inner, {
       exactSystemPrompt,
       chatOnly,
+      chatWorkspace,
+      chatFolder,
+      chatUnlocked,
       onAgentRunComplete: (completedSessionId) => {
         void notifySessionComplete(completedSessionId).catch((error) => {
           console.error("[pi-web] failed to send completion push:", error instanceof Error ? error.message : error);

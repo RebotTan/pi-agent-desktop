@@ -5,6 +5,7 @@ import { randomUUID } from "crypto";
 import { allowFileRoot } from "@/lib/file-access";
 import { invalidateSessionListCache } from "@/lib/session-reader";
 import { startRpcSession } from "@/lib/rpc-manager";
+import { ensureChatWorkspace, isChatWorkspacePath } from "@/lib/chat-workspace";
 
 const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
@@ -25,6 +26,7 @@ export async function POST(req: Request) {
   try {
     const body = await req.json() as { cwd?: string; [key: string]: unknown };
     const { cwd, ...command } = body;
+    const chatWorkspace = typeof cwd === "string" && isChatWorkspacePath(cwd);
     commandType = typeof command.type === "string" ? command.type : undefined;
 
     if (!cwd || typeof cwd !== "string") {
@@ -35,6 +37,7 @@ export async function POST(req: Request) {
           : {}),
       }, { status: 400 });
     }
+    if (chatWorkspace) await ensureChatWorkspace();
     if (!existsSync(cwd)) {
       return NextResponse.json({
         error: `Directory does not exist: ${cwd}`,
@@ -45,11 +48,14 @@ export async function POST(req: Request) {
     }
 
     // Use a one-time key so startRpcSession's lock doesn't conflict with real session ids
-    const { provider, modelId, toolNames, thinkingLevel, ...promptCommand } = command as { provider?: string; modelId?: string; toolNames?: string[]; thinkingLevel?: unknown; [key: string]: unknown };
+    const { provider, modelId, toolNames: requestedToolNames, thinkingLevel, ...promptCommand } = command as { provider?: string; modelId?: string; toolNames?: string[]; thinkingLevel?: unknown; [key: string]: unknown };
     if ((provider && !modelId) || (!provider && modelId)) {
       throw new Error("provider and modelId must be provided together");
     }
     const explicitThinkingLevel = parseThinkingLevel(thinkingLevel);
+    // A chat has no tool preset. Ignore a stale or hand-crafted client selection:
+    // the workspace policy (lib/chat-workspace-policy.ts) decides, server-side.
+    const toolNames = chatWorkspace ? undefined : requestedToolNames;
 
     // Must be unique per request: startRpcSession coalesces concurrent callers
     // that share a key onto one session. Date.now() (ms resolution) collides for
@@ -64,7 +70,8 @@ export async function POST(req: Request) {
     // Keep the files-route allowed-roots cache (see app/api/files/[...path]/route.ts)
     // in sync so the new cwd is immediately readable via /api/files. Without this,
     // a file request under a brand-new cwd would 403 for up to the cache TTL.
-    allowFileRoot(cwd);
+    // A new chat was requested with the chat root and runs in a folder of its own.
+    allowFileRoot(session.cwd || cwd);
     invalidateSessionListCache();
 
     const state = await session.send({ type: "get_state" }) as {

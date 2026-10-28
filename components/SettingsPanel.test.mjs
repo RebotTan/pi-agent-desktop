@@ -2,32 +2,35 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
-const panelSource = await readFile(new URL("./SettingsPanel.tsx", import.meta.url), "utf8");
-const cssSource = await readFile(new URL("../app/settings.css", import.meta.url), "utf8");
-const globalCssSource = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
-const shellSource = await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8");
-const sidebarSource = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
-const themeSource = await readFile(new URL("../hooks/useTheme.ts", import.meta.url), "utf8");
-const themeOptionsSource = await readFile(new URL("../lib/theme.ts", import.meta.url), "utf8");
-const enSource = await readFile(new URL("../lib/i18n/messages/en.ts", import.meta.url), "utf8");
-const zhSource = await readFile(new URL("../lib/i18n/messages/zh-CN.ts", import.meta.url), "utf8");
-const loginSource = await readFile(new URL("../app/login/page.tsx", import.meta.url), "utf8");
-const stackedDialogSource = await readFile(new URL("../lib/stacked-dialog.ts", import.meta.url), "utf8");
+const panelSource = (await readFile(new URL("./SettingsPanel.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const appearanceSource = (await readFile(new URL("./AppearanceSettings.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const cssSource = (await readFile(new URL("../app/settings.css", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const globalCssSource = (await readFile(new URL("../app/globals.css", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const shellSource = (await readFile(new URL("./AppShell.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const sidebarSource = (await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const themeSource = (await readFile(new URL("../hooks/useTheme.ts", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const themeOptionsSource = (await readFile(new URL("../lib/theme.ts", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const { createJiti } = await import("jiti");
+const jiti = createJiti(import.meta.url);
+const { englishMessages: enMessages, forkLocalePlugins } = await jiti.import("../lib/i18n/locale-plugins.ts");
+const zhMessages = Object.fromEntries(forkLocalePlugins.map(({ id, messages }) => [id, messages]))["zh-CN"];
+const loginSource = (await readFile(new URL("../app/login/page.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
+const stackedDialogSource = (await readFile(new URL("../lib/stacked-dialog.ts", import.meta.url), "utf8")).replace(/\r\n/g, "\n");
 
 test("opens one settings panel from a single sidebar settings entry", () => {
   assert.match(shellSource, /<SettingsPanel/);
   assert.match(shellSource, /initialSection=\{settingsSection\}/);
   assert.match(shellSource, /translate\("common\.settings"\)/);
-  assert.match(shellSource, /aria-haspopup="menu"/);
-  assert.match(shellSource, /SETTINGS_SECTION_ITEMS\.map/);
-  assert.match(shellSource, /setSettingsSection\(item\.id\)/);
+  assert.match(shellSource, /onClick=\{openSettingsAtLastSection\}/);
+  assert.match(shellSource, /aria-haspopup="dialog"/);
+  assert.doesNotMatch(shellSource, /SettingsEntryMenu|toggleSettingsMenu/);
   assert.doesNotMatch(shellSource, /\["models", translate\("common\.models"\)\]/);
   assert.doesNotMatch(shellSource, /\["plugins", translate\("common\.plugins"\)\]/);
   assert.doesNotMatch(shellSource, /setModelsConfigOpen|setSkillsConfigOpen|setAgentsConfigOpen|setPluginsConfigOpen/);
 });
 
 test("keeps every requested configuration surface inside the settings panel", () => {
-  for (const section of ["general", "models", "skills", "agents", "plugins", "mcp"]) {
+  for (const section of ["general", "appearance", "models", "skills", "agents", "plugins", "mcp"]) {
     assert.match(panelSource, new RegExp(`id: "${section}"`));
   }
   for (const component of ["ModelsConfig", "SkillsConfig", "AgentsConfig", "PluginsConfig", "McpConfig"]) {
@@ -42,7 +45,7 @@ test("keeps one settings surface per concern — no desktop tab duplicating Gene
   assert.doesNotMatch(panelSource, /id: "desktop"/);
   assert.match(panelSource, /<AppUpdatesSection onBusyChange=/);
   assert.match(panelSource, /<DesktopAppSection \/>/);
-  assert.match(panelSource, /settings-general-intro/);
+  assert.match(panelSource, /settings-general-overview/);
   assert.match(panelSource, /PRODUCT_NAME/);
 });
 
@@ -55,15 +58,12 @@ test("Settings › MCP works without a project, and only project sections fall b
   assert.match(panelSource, /const sectionRequiresProject = settingsSectionRequiresProject\(section\);/);
   assert.match(panelSource, /if \(cwd \|\| !sectionRequiresProject\) return;/);
   assert.doesNotMatch(panelSource, /section !== "skills" && section !== "agents"/);
-  // The fork's settings-entry menu derives the flag from SETTINGS_SECTION_ITEMS
-  // (which itself asks settingsSectionRequiresProject), instead of naming
-  // sections by hand.
-  assert.match(panelSource, /requiresProject: settingsSectionRequiresProject\(item\.id\)/);
-  assert.match(shellSource, /const disabled = item\.requiresProject && !projectTrustCwd;/);
   assert.doesNotMatch(shellSource, /section !== "models"/);
   // Its own glyph, not the Plugins fallback.
   assert.match(panelSource, /if \(section === "mcp"\) return <svg \{\.\.\.common\}>/);
-  for (const source of [enSource, zhSource]) assert.match(source, /"settings\.mcp": "MCP"/);
+  for (const messages of [enMessages, zhMessages]) {
+    assert.equal(messages["settings.mcp"], "MCP");
+  }
 });
 
 test("restores the settings section and each list detail selection", async () => {
@@ -71,14 +71,14 @@ test("restores the settings section and each list detail selection", async () =>
   assert.match(panelSource, /setLastSettingsSection\(nextSection\)/);
   for (const name of ["ModelsConfig", "SkillsConfig", "AgentsConfig", "PluginsConfig", "McpConfig"]) {
     assert.match(
-      await readFile(new URL(`./${name}.tsx`, import.meta.url), "utf8"),
+      ((await readFile(new URL(`./${name}.tsx`, import.meta.url), "utf8")).replace(/\r\n/g, "\n")).replace(/\r\n/g, "\n"),
       /getLastSettingsSelection/,
     );
   }
 });
 
 test("keeps visited settings sections mounted and contains nested Escape handling", async () => {
-  const modelsSource = await readFile(new URL("./ModelsConfig.tsx", import.meta.url), "utf8");
+  const modelsSource = ((await readFile(new URL("./ModelsConfig.tsx", import.meta.url), "utf8")).replace(/\r\n/g, "\n")).replace(/\r\n/g, "\n");
   assert.match(panelSource, /mountedSections\.has\(id\)/);
   assert.match(panelSource, /hidden=\{section !== id\}/);
   // Settings closes on an Escape nothing nearer handled (lib/stacked-dialog.test.mjs pins the phases).
@@ -130,7 +130,7 @@ test("trusting from Settings › MCP reloads, in place, the other mounted sectio
   for (const name of ["SkillsConfig", "AgentsConfig", "PluginsConfig"]) {
     assert.match(panelSource, new RegExp(`<${name} embedded key=\\{cwd\\} cwd=\\{cwd\\}[^\\n]*? trust=\\{projectTrust\\} `), name);
   }
-  const read = (name) => readFile(new URL(`./${name}.tsx`, import.meta.url), "utf8");
+  const read = async (name) => ((await readFile(new URL(`./${name}.tsx`, import.meta.url), "utf8")).replace(/\r\n/g, "\n")).replace(/\r\n/g, "\n");
   const [skills, plugins, agents] = await Promise.all(["SkillsConfig", "PluginsConfig", "AgentsConfig"].map(read));
   // Skills and Plugins report "not loaded" and disable the Project scope from the trust at load
   // time: a new decision loads the list again, keeping the selection and update checks; the
@@ -157,9 +157,11 @@ test("offers light, dark and system theme selection with native radios", () => {
   for (const removed of ["mist", "rose", "pine"]) {
     assert.doesNotMatch(themeOptionsSource, new RegExp(`id: "${removed}"`));
   }
-  assert.match(panelSource, /THEME_OPTIONS\.map/);
-  assert.match(panelSource, /type="radio"/);
-  assert.match(panelSource, /setThemePreference\(option\.id\)/);
+  assert.match(panelSource, /sectionHost\("appearance", <AppearanceSettings \/>\)/);
+  assert.doesNotMatch(panelSource, /THEME_OPTIONS\.map/);
+  assert.match(appearanceSource, /THEME_OPTIONS\.map/);
+  assert.match(appearanceSource, /type="radio"/);
+  assert.match(appearanceSource, /setThemePreference\(option\.id\)/);
   assert.match(themeSource, /const setThemePreference = useCallback/);
 });
 
@@ -170,22 +172,19 @@ test("keeps language selection in General settings", () => {
 });
 
 test("groups chat display controls together without row backgrounds", () => {
-  const appearanceSection = panelSource.slice(
-    panelSource.indexOf('{t("settings.appearance")}'),
-    panelSource.indexOf('{t("settings.chat")}'),
-  );
   const chatSection = panelSource.slice(
     panelSource.indexOf('{t("settings.chat")}'),
     panelSource.indexOf("{shellSettings?.isWindows"),
   );
 
-  assert.doesNotMatch(appearanceSection, /settings-chat-content/);
+  assert.doesNotMatch(appearanceSource, /settings-chat-content/);
   assert.match(chatSection, /className="settings-chat-options"/);
   // The fork's diffViewMode choice rides in the same group after the merged
-  // send-mode radio (thinking, width, font, quote, send mode, diff view).
-  assert.equal((chatSection.match(/className="settings-chat-option(?: |")/g) ?? []).length, 6);
-  assert.equal((chatSection.match(/<ConfigSwitch/g) ?? []).length, 2);
-  for (const key of ["thinkingExpandedDefault", "chatContentWidth", "chatContentFontSize", "quoteSelection", "enterSendMode", "enterSendModeEnter", "enterSendModeCtrlEnter"]) {
+  // send-mode radio (thinking, width, font, quote, completion sound, send
+  // mode, diff view). The sound switch moved here from the composer row.
+  assert.equal((chatSection.match(/className="settings-chat-option(?: |")/g) ?? []).length, 7);
+  assert.equal((chatSection.match(/<ConfigSwitch/g) ?? []).length, 3);
+  for (const key of ["thinkingExpandedDefault", "chatContentWidth", "chatContentFontSize", "quoteSelection", "completionSound", "enterSendMode", "enterSendModeEnter", "enterSendModeCtrlEnter"]) {
     assert.match(chatSection, new RegExp(`t\\("settings\\.${key}"\\)`));
   }
   assert.doesNotMatch(panelSource, /ThinkingIcon|settings-thinking-/);
@@ -221,10 +220,10 @@ test("uses top navigation on desktop and one compact section picker on mobile", 
 });
 
 test("labels agent profiles as sub-agents", () => {
-  assert.match(enSource, /"common\.agents": "Sub-agents"/);
-  assert.match(enSource, /"agents\.new": "New sub-agent"/);
-  assert.match(zhSource, /"common\.agents": "子代理"/);
-  assert.match(zhSource, /"agents\.new": "新建子代理"/);
+  assert.equal(enMessages["common.agents"], "Sub-agents");
+  assert.equal(enMessages["agents.new"], "New sub-agent");
+  assert.equal(zhMessages["common.agents"], "子代理");
+  assert.equal(zhMessages["agents.new"], "新建子代理");
 });
 
 test("uses the child-session robot glyph for the sub-agents tab", () => {

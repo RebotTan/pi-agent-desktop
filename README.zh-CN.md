@@ -47,6 +47,12 @@
 
 > 安装 Pi Agent 后，可以直接使用 App 中的 Pi Agent 功能；但它不会在系统全局安装 `pi` 命令。如果还需要在终端中使用 Pi CLI，请按照 [pi 项目](https://github.com/earendil-works/pi) 的说明单独安装。
 
+> **macOS 首次打开被拦截**：macOS 版本目前没有 Apple Developer ID 签名和公证，首次打开时 Gatekeeper 可能提示“无法验证开发者”或“已损坏，无法打开”（通过 Homebrew 安装也一样）。可以在「系统设置 › 隐私与安全性」中点「仍要打开」，或在终端执行：
+>
+> ```bash
+> xattr -dr com.apple.quarantine "/Applications/Pi Agent.app"
+> ```
+
 首次启用签名自动升级前，旧的无 updater 版本需要手动安装一次新的签名 App。此后即可在设置中完成升级。
 
 ### 使用现有 Pi 数据
@@ -130,7 +136,7 @@ npm run dev
 PI_WEB_PASSWORD='换成足够长的口令' npm run dev:lan
 ```
 
-设置 `PI_WEB_PASSWORD` 后，浏览器首次访问需要输入密码，连续失败会被限流。连接仍是明文 HTTP，请放在 HTTPS 或可信 VPN 之后；如需用 IP 以外的域名访问，用 `PI_WEB_ALLOWED_HOSTS`（逗号分隔）放行。监听非回环地址且未设密码时，启动器会打印警告。桌面 App 不受影响：它只绑定回环地址，并用每进程 token 认证 WebView。
+设置 `PI_WEB_PASSWORD` 后，浏览器首次访问需要输入密码，连续失败会被限流。连接仍是明文 HTTP，请放在 HTTPS 或可信 VPN 之后；如需用 IP 以外的域名访问，用 `PI_WEB_ALLOWED_HOSTS`（逗号分隔）放行。未设密码时，启动器拒绝监听非回环地址；在可信网络上可以设 `PI_WEB_ALLOW_UNAUTHENTICATED=1` 强制启动，启动时会打印警告。桌面 App 不受影响：它只绑定回环地址，并用每进程 token 认证 WebView。
 
 ### 启动桌面开发模式
 

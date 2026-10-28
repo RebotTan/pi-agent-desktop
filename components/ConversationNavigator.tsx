@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type RefObject } from "react";
 import { useI18n } from "../hooks/useI18n";
 
 export interface ConversationTurnLocation {
@@ -12,6 +12,8 @@ export interface ConversationTurnLocation {
 interface Props {
   turns: ConversationTurnLocation[];
   scrollContainerRef: RefObject<HTMLDivElement | null>;
+  contentRef: RefObject<HTMLDivElement | null>;
+  enabled?: boolean;
   onSelect: (index: number) => void;
 }
 
@@ -21,18 +23,21 @@ function nearestTurnIndex(event: ReactPointerEvent<HTMLDivElement>, count: numbe
   return Math.min(count - 1, Math.round(ratio * (count - 1)));
 }
 
-export function ConversationNavigator({ turns, scrollContainerRef, onSelect }: Props) {
+export function ConversationNavigator({ turns, scrollContainerRef, contentRef, enabled = true, onSelect }: Props) {
   const { t } = useI18n();
   const [activeIndex, setActiveIndex] = useState(0);
   const [previewIndex, setPreviewIndex] = useState<number | null>(null);
   const [isHovering, setIsHovering] = useState(false);
+  const [hasSpace, setHasSpace] = useState(false);
   const draggingRef = useRef(false);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const container = scrollContainerRef.current;
-    if (!container || turns.length < 2) return;
+    const content = contentRef.current;
+    let visible = false;
 
     const updateActive = () => {
+      if (!visible || !container) return;
       const containerTop = container.getBoundingClientRect().top;
       const anchors = Array.from(container.querySelectorAll<HTMLElement>("[data-conversation-turn]"));
       if (anchors.length === 0) return;
@@ -49,15 +54,32 @@ export function ConversationNavigator({ turns, scrollContainerRef, onSelect }: P
       setActiveIndex(closest);
     };
 
-    updateActive();
+    const updateLayout = () => {
+      // The preferred text width is adjustable up to 2000px. A wide window
+      // alone does not guarantee a free gutter next to the actual text column.
+      const area = container?.getBoundingClientRect();
+      const text = content?.getBoundingClientRect();
+      visible = Boolean(enabled && turns.length >= 2 && area && text
+        && area.width >= 1024 && text.left - area.left >= 64);
+      setHasSpace(visible);
+      if (visible) updateActive();
+      else {
+        setPreviewIndex(null);
+        setIsHovering(false);
+        draggingRef.current = false;
+      }
+    };
+    updateLayout();
+    if (!enabled || !container || !content || turns.length < 2) return;
     container.addEventListener("scroll", updateActive, { passive: true });
-    const observer = new ResizeObserver(updateActive);
+    const observer = new ResizeObserver(updateLayout);
     observer.observe(container);
+    observer.observe(content);
     return () => {
       container.removeEventListener("scroll", updateActive);
       observer.disconnect();
     };
-  }, [scrollContainerRef, turns.length]);
+  }, [enabled, contentRef, scrollContainerRef, turns.length]);
 
   const selectFromPointer = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
     if (turns.length === 0) return;
@@ -74,7 +96,7 @@ export function ConversationNavigator({ turns, scrollContainerRef, onSelect }: P
     top: 1 + index * 10,
   })), [turns]);
 
-  if (turns.length < 2) return null;
+  if (!enabled || !hasSpace || turns.length < 2) return null;
 
   return (
     <div
@@ -87,12 +109,24 @@ export function ConversationNavigator({ turns, scrollContainerRef, onSelect }: P
       }}
     >
       {preview && (
-        <div className="conversation-navigator-preview" role="status">
-          <div className="conversation-navigator-question">{preview.question}</div>
-          <div className="conversation-navigator-answer">
+        // Clicking the card jumps to its turn, like clicking the tick beside it.
+        // It is not a tab stop: the track's arrow keys already move between turns.
+        <button
+          type="button"
+          className="conversation-navigator-preview"
+          tabIndex={-1}
+          title={t("chat.conversationNavigatorJump")}
+          onClick={() => {
+            if (previewIndex == null) return;
+            setActiveIndex(previewIndex);
+            onSelect(previewIndex);
+          }}
+        >
+          <span className="conversation-navigator-question">{preview.question}</span>
+          <span className="conversation-navigator-answer">
             {preview.answer || "…"}
-          </div>
-        </div>
+          </span>
+        </button>
       )}
       <div
         className="conversation-navigator-track"
