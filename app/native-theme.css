@@ -9329,7 +9329,7 @@ html.dark .msg-rail-track {
   pointer-events: none;
   background-repeat: no-repeat;
   background-image:
-    radial-gradient(circle at 50% var(--msg-rail-dot-y, 24px),
+    radial-gradient(circle at 50% 24px,
       var(--msg-rail-dot, var(--msg-rail-dot-assistant)) 0 3.2px,
       var(--msg-rail-bg) 3.2px 5.4px,
       transparent 5.4px),
@@ -9373,7 +9373,13 @@ html.dark .msg-rail-track {
    整个轨道上唯一的强调色。用 `:not(:has(~ .msg-rail-row))` 而不是
    `:last-child`：真实 DOM 里 track 的子节点不全是 row（process group 把若干
    行包进嵌套容器，其后还有 loading / spacer 节点），`last-child` 会落空。 */
-.msg-rail-row:not(:has(~ .msg-rail-row))::before {
+/* 末行的圆点换成「运行中」色 —— 会话永远在最后一行继续发生，这一格绿色是
+   整个轨道上唯一的强调色。用 `:not(:has(~ .msg-rail-row))` 而不是
+   `:last-child`：真实 DOM 里 track 的子节点不全是 row（process group 把若干
+   行包进嵌套容器，其后还有 loading / spacer 节点），`last-child` 会落空。
+   限定 track 直接子级（`>`）：process group 展开后，嵌套容器里的最后一个
+   row 同样没有后续 row 兄弟，不加 `>` 会误中，出现多个绿点。 */
+.msg-rail-track > .msg-rail-row:not(:has(~ .msg-rail-row))::before {
   inset: 0 auto 0 0;
   --msg-rail-dot: var(--msg-rail-dot-live);
 }

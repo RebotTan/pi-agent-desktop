@@ -92,7 +92,7 @@ export function ApprovalPrompts() {
         <div className="approval-card-head">
           <span className="approval-card-title">{t("approval.title")}</span>
           <code className="approval-card-tool">{current.toolName}</code>
-          {extra > 0 && <span className="approval-card-more">{t("approval.more").replace("{count}", String(extra))}</span>}
+          {extra > 0 && <span className="approval-card-more">{t("approval.more", { count: extra })}</span>}
         </div>
         {args && <pre className="approval-card-args">{args}</pre>}
         {error && <div className="approval-card-error" role="status">{error}</div>}
