@@ -163,6 +163,19 @@ test("the manifest job only publishes when every platform succeeded", async () =
   assert.match(manifestJob, /--draft=false --latest --prerelease=false/);
 });
 
+test("the release notes come from CHANGELOG.md, not a hand-written paragraph", async () => {
+  // releaseBody used to be an inline 0.7.7 announcement; it went stale the
+  // moment the next version shipped, and every release kept advertising 0.7.7.
+  const workflow = await readText(join(root, ".github", "workflows", "release.yml"), "utf8");
+  const manifestJob = workflow.slice(workflow.indexOf("\n  manifest:"), workflow.indexOf("\n  notify:"));
+
+  // tauri-action may only create the draft with a placeholder body.
+  assert.match(workflow, /releaseBody: "Release v__VERSION__/);
+  // The manifest job writes the real body from the changelog before publishing.
+  assert.match(manifestJob, /release-notes\.mjs --version/);
+  assert.match(manifestJob, /gh release edit "v\$version" --notes-file/);
+});
+
 test("release workflow publishes Linux rpm and Windows x64 installers", async () => {
   const workflow = await readText(
     join(root, ".github", "workflows", "release.yml"),
