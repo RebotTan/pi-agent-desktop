@@ -132,13 +132,30 @@ composer 上方审批卡（允许 / 拒绝）+ Settings › 工具审批 规则�
 
 ---
 
+### 11. 会话搜索索引（SQLite FTS5）
+
+| 项 | 值 |
+|---|---|
+| ticket | `.scratch/tickets/0005-session-search-index.md` |
+| seam | `lib/session-search.ts` 的 `searchSessionContents`（内部先试索引，不可用回退流式） |
+| 文件 | `lib/session-search-index.ts`（新增）、`lib/session-search.ts` |
+| 解锁 | 全库搜索、毫秒级响应、中文两字词可搜 |
+
+原实现 `searchSessionContents` 有 `MAX_FILES=500` 的硬上限（源码注释 `// ponytail: scan recent files without an index`），超过 500 个会话的历史永远搜不到，且每次搜索要顺序读最多 500 个文件。
+
+本项新增 `lib/session-search-index.ts`：`node:sqlite`（Node 22 内置，零依赖）FTS5 虚表，按 `size + mtime` 增量同步。**分词器选 `unicode61` + 预切 bigram**，不用 FTS5 自带的 `trigram` —— 实测 trigram 对中文两字词（「测试」）命中为 0（它要求查询 ≥3 字符），bigram 则 2/3/4 字、英文、中英混合全部正确。
+
+`PI_SESSION_SEARCH_INDEX=0` 可退回流式实现；`PI_SESSION_SEARCH_INDEX_PATH` 可指定库路径（诊断用）。流式实现与它的边界测试（16MB 字节上限、deadline、abort、501 文件 cap）保留，测的是流式专属行为。
+
+---
+
 ## 二、待做（第三轮及以后）
 
 按投入产出排序。每项标注：依赖的 seam、解锁的能力、预估投入、优先级。
 
 ### 高优先级（直接影响可用性）
 
-#### 11. 插件 UI contribution 落地（第一个真实插件）
+#### 12. 插件 UI contribution 落地（第一个真实插件）
 
 | 项 | 值 |
 |---|---|
@@ -151,7 +168,7 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 
 ### 中优先级（架构演进）
 
-#### 12. SidecarEngine（多 Agent 并行隔离）
+#### 13. SidecarEngine（多 Agent 并行隔离）
 
 | 项 | 值 |
 |---|---|
@@ -162,18 +179,20 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 
 每 worker 一个 `pi --mode rpc` 子进程（参考 PiDeck/PI-Desktop 思想，不抄代码避 LGPL）。`SidecarEngine` 实现 `AgentEngine` 接口，`startSession` spawn 子进程，`send` 走 stdio JSON-RPC，`events` 转发子进程事件。主进程 `InProcessAgentEngine` 不变，编排器按需选引擎。
 
-#### 13. SessionStore SQLite 实现
+#### 14. SessionStore SQLite 列表镜像
 
 | 项 | 值 |
 |---|---|
 | seam | `SessionStore` 接口（PR-3） |
-| 解锁 | 会话搜索索引、大规模历史、用量统计查询 |
+| 解锁 | 大规模历史列表、用量统计查询 |
 | 投入 | 3–5 天 |
 | 优先级 | ★☆☆ |
 
-新增 `SqliteSessionStore` 实现 `SessionStore` 接口，JSONL 写入时同步镜像到 SQLite（写路径仍走 SDK，SQLite 只做读索引）。`getSessionStore()` 按配置切实现。
+**搜索索引已交付（见已交付 #11）**，这一项剩下的是列表读路径的镜像：新增 `SqliteSessionStore` 实现 `SessionStore` 接口，JSONL 写入时同步镜像到 SQLite（写路径仍走 SDK，SQLite 只做读索引），`getSessionStore()` 按配置切实现。
 
-#### 14. 外部会话导入转换器
+降级理由：列表已经有 `lib/session-list-scanner.ts` 的增量 JSON 索引（`pi-web-session-index.json`，按 size+mtime 命中缓存），瓶颈只剩每个会话 `attachSessionProjectInfo` 的 git 调用；而搜索 —— 原先最痛的一刀 —— 已被 FTS5 索引解决。剩下的是「大规模历史 + 用量统计查询」，等会话数上千再说。
+
+#### 15. 外部会话导入转换器
 
 | 项 | 值 |
 |---|---|
@@ -186,7 +205,7 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 
 ### 低优先级（纯 UI / 锦上添花）
 
-#### 15. 事件总线出口：webhook / 飞书
+#### 16. 事件总线出口：webhook / 飞书
 
 | 项 | 值 |
 |---|---|
@@ -197,18 +216,18 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 
 订阅 `AgentEventBus`，按规则转发到 webhook。配置存 `~/.pi/agent/webhooks.json`。
 
-#### 16. 用量统计
+#### 17. 用量统计
 
 | 项 | 值 |
 |---|---|
-| seam | 事件总线（PR-5）+ SessionStore SQLite（#13） |
+| seam | 事件总线（PR-5）+ SessionStore SQLite（#14） |
 | 解锁 | 用量热力图/每日/模型/项目统计 |
 | 投入 | 2–3 天 |
 | 优先级 | ★☆☆ |
 
 订阅 usage 事件 → 持久化到 SQLite → 前端统计面板。
 
-#### 17. SSH RemoteEngine
+#### 18. SSH RemoteEngine
 
 | 项 | 值 |
 |---|---|
@@ -219,7 +238,7 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 
 `RemoteEngine` 实现 `AgentEngine`，`startSession` SSH 连远程机起 pi sidecar，`send`/`events` 走 SSH 通道。远期。
 
-#### 18. Plan Mode
+#### 19. Plan Mode
 
 | 项 | 值 |
 |---|---|
@@ -230,7 +249,7 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 
 启动参数带 mode=plan，agent 只规划不执行，计划确认后切 mode=execute。复用审批管道的「挂起等确认」机制。
 
-#### 19. 上下文蒸发
+#### 20. 上下文蒸发
 
 | 项 | 值 |
 |---|---|
@@ -271,4 +290,4 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 |---|---|
 | 0.10.1 | PR-1~PR-6（5 个 seam + 插件骨架）+ 发版基建 + releaseBody 自动化 |
 | 0.10.2 | PR-5 `session_ended` 端测（`b02ad78`）+ 平台裁剪（`6e08e34`/`a6da4bc`）+ releaseBody（`c35ae95`）+ 消息轨道（`e33c22d`）+ 审批 UI（`f5f8495`） |
-| 未定 | #11~#19 待做项，按优先级逐个 PR |
+| 未定 | #12~#20 待做项，按优先级逐个 PR |
