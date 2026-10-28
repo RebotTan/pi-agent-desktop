@@ -1,9 +1,9 @@
 name: Build Linux RPM (no updater)
 
-# Builds deb+rpm without needing updater signing secrets.
+# Builds the Linux rpm without needing updater signing secrets.
 # The release workflow (release.yml) requires TAURI_SIGNING_PRIVATE_KEY /
 # TAURI_UPDATER_PUBLIC_KEY, which forks do not have. This workflow overrides
-# createUpdaterArtifacts=false so a plain `tauri build --bundles deb,rpm` runs.
+# createUpdaterArtifacts=false so a plain `tauri build --bundles rpm` runs.
 
 on:
   workflow_dispatch:
@@ -50,14 +50,13 @@ jobs:
       - name: Prepare packaged Next.js server
         run: npm run desktop:prepare
 
-      - name: Build deb and rpm bundles
-        run: npm run desktop:build -- --bundles deb,rpm --config '{"bundle":{"createUpdaterArtifacts":false}}'
+      - name: Build rpm bundle
+        run: npm run desktop:build -- --bundles rpm --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       - name: Upload bundles
         uses: actions/upload-artifact@v4
         with:
           name: linux-bundles
           path: |
-            src-tauri/target/release/bundle/deb/*.deb
             src-tauri/target/release/bundle/rpm/*.rpm
           if-no-files-found: error

@@ -40,7 +40,7 @@
   ```
 
   App 会在设置中自行升级，所以 `brew upgrade` 默认不会处理它，除非加上 `--greedy`。`brew uninstall --cask --zap pi-agent` 会删除 App 及其窗口状态，但不会删除与 pi CLI 共用的 `~/.pi`。
-- Linux x64：下载 `.deb` 包，用发行版自带的包管理器安装。社区还维护了一个 [flatpark.org](https://flatpark.org/apps/io.github.RebotTan.pid/) 上的 Flatpak 版本——不是官方发布，但 Flatpak 兼容大多数发行版，也会帮你处理更新。
+- Linux x64：下载 `.rpm` 包（Fedora、RHEL、openSUSE），用发行版自带的包管理器安装。
 - Windows x64：下载名称以 `x64-setup.exe` 结尾的安装程序并运行。安装器会在需要时安装 Microsoft WebView2。
 
 正式 Release 支持运行 macOS 11 或更高版本的 Apple Silicon Mac、Windows 10/11 x64，以及使用 WebKitGTK 4.1 和 GTK 3 的 Linux x64 发行版。桌面包内包含运行 PiD 所需的 Next.js 服务、Node.js runtime 和当前版本的 Pi SDK，打开 App 时会自动启动本地服务，不需要用户另开终端、安装 Node.js 或单独启动 Web Server。

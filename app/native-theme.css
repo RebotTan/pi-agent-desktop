@@ -1044,7 +1044,7 @@
   --bg-subtle: rgba(0, 0, 0, 0.04);
   --scroll-thumb: rgba(110, 110, 120, 0.3);
 
-  /* Typography. "Noto Sans SC" backstops CJK on Linux builds (deb target in
+  /* Typography. "Noto Sans SC" backstops CJK on Linux builds (rpm target in
      release.yml), which this stack otherwise has no CJK fallback for once it
      falls past the macOS/Windows-only names above it. */
   --font-ui-default: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",

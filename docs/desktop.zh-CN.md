@@ -29,7 +29,7 @@ npm run desktop:build
 
 1. 在 `.next-desktop/` 生成隔离的 Next.js standalone build。
 2. 将服务端资源与当前平台架构的 Node runtime 暂存给 Tauri。
-3. 在 macOS 生成 `.app` 和 `.dmg`，在 Windows x64 生成 NSIS `-setup.exe`，在 Linux x64 生成 `.deb`。
+3. 在 macOS 生成 `.app` 和 `.dmg`，在 Windows x64 生成 NSIS `-setup.exe`，在 Linux x64 生成 `.rpm`。
 
 Linux 安装包依赖 WebKitGTK 4.1 和 GTK 3 运行库；Node runtime 已包含在安装包中，用户无需另行安装 Node.js。
 
@@ -43,10 +43,10 @@ Windows 上项目与用户目录位于不同盘符时，不能只依赖 `outputF
 src-tauri/target/release/bundle/macos/Pi Agent.app
 src-tauri/target/release/bundle/dmg/Pi Agent_<version>_<arch>.dmg
 src-tauri/target/release/bundle/nsis/Pi Agent_<version>_x64-setup.exe
-src-tauri/target/release/bundle/deb/pi-agent-desktop_<version>_amd64.deb
+src-tauri/target/release/bundle/rpm/PiD-<version>-x86_64.rpm
 ```
 
-构建结果是当前机器架构的原生应用：Apple Silicon 构建 `aarch64` DMG，Linux x64 构建 `.deb`，Windows x64 构建 NSIS `-setup.exe`。正式流水线不构建 Intel Mac 版本。发布给其他用户前，macOS 应使用 Apple Developer ID 签名并公证，Windows 应使用 Authenticode 证书签名；本地开发和测试不要求平台代码签名。
+构建结果是当前机器架构的原生应用：Apple Silicon 构建 `aarch64` DMG，Linux x64 构建 `.rpm`，Windows x64 构建 NSIS `-setup.exe`。正式流水线不构建 Intel Mac 版本。发布给其他用户前，macOS 应使用 Apple Developer ID 签名并公证，Windows 应使用 Authenticode 证书签名；本地开发和测试不要求平台代码签名。
 
 桌面版会检查 `pi-agent-desktop`、Pi 与 Pi Web 的官方 GitHub Release。每个项目最多每 7 天检查一次；发现任一组件有新版后，用户可以从设置中安装包含全部最新组件的完整签名 App 并重启。详细机制见 [桌面升级与发布说明](./desktop-updates.md)。
 
