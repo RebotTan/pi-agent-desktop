@@ -1,14 +1,14 @@
 [package]
-name = "pi-agent-desktop"
+name = "pid"
 version = "0.10.1"
-description = "Desktop shell for Pi Agent"
-authors = ["pi-agent-desktop contributors"]
+description = "Desktop shell for PiD"
+authors = ["pid contributors"]
 license = "MIT"
 edition = "2021"
 rust-version = "1.85.0"
 
 [lib]
-name = "pi_agent_desktop_lib"
+name = "pid_lib"
 crate-type = ["staticlib", "cdylib", "lib"]
 
 [build-dependencies]

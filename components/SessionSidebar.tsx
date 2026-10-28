@@ -27,6 +27,7 @@ import { APP_PREF_KEYS, getPref, getPrefJson, removePref, setPref, setPrefJson }
 import { groupByProject } from "@/lib/project-group";
 import { getProjectDisplayName, getProjectDisplayNames } from "@/lib/project-display";
 import { notifyDesktop } from "@/lib/desktop-notify";
+import { PRODUCT_NAME } from "@/lib/branding";
 import { revealItemInDirNative } from "@/lib/desktop-native";
 import { isTauriDesktop } from "@/lib/desktop-updater";
 import {
@@ -772,7 +773,7 @@ export function SessionSidebar({ selectedSessionId, onSelectSession, onNewSessio
       };
       for (const id of completedWithNotifications) {
         void notifyDesktop({
-          title: "Pi Agent",
+          title: PRODUCT_NAME,
           body: `Finished: ${sessionName(id)}`,
         });
       }

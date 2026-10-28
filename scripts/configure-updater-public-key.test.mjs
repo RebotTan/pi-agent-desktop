@@ -39,7 +39,7 @@ test("rejects Base64 that is not a Minisign public key", () => {
 
 test("injects the updater key without losing existing configuration", () => {
   const config = {
-    productName: "Pi Agent",
+    productName: "PiD",
     plugins: {
       updater: {
         endpoints: ["https://example.com/latest.json"],
@@ -49,7 +49,7 @@ test("injects the updater key without losing existing configuration", () => {
   };
 
   assert.deepEqual(injectUpdaterPublicKey(config, encodedPublicKey), {
-    productName: "Pi Agent",
+    productName: "PiD",
     plugins: {
       updater: {
         endpoints: ["https://example.com/latest.json"],
@@ -61,7 +61,7 @@ test("injects the updater key without losing existing configuration", () => {
 });
 
 test("writes the updater key into a Tauri configuration file", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "pi-agent-desktop-updater-key-"));
+  const directory = await mkdtemp(join(tmpdir(), "pid-updater-key-"));
   const configPath = join(directory, "tauri.conf.json");
 
   try {

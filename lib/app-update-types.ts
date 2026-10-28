@@ -7,7 +7,7 @@
  * update flow consumes these. See docs/ownership-boundaries.md.
  */
 
-export type AppUpdateProjectId = "pi-agent-desktop";
+export type AppUpdateProjectId = "pid";
 
 export type AppReleaseStatus = "available" | "unpublished" | "unknown";
 

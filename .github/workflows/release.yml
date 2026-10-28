@@ -7,7 +7,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: pi-agent-desktop-release
+  group: pid-release
   cancel-in-progress: false
 
 jobs:
@@ -39,7 +39,7 @@ jobs:
             apple_signing_identity: ""
     runs-on: ${{ matrix.runner }}
     steps:
-      - name: Check out pi-agent-desktop
+      - name: Check out pid
         uses: actions/checkout@v7
 
       - name: Require updater signing secrets
@@ -117,7 +117,7 @@ jobs:
           APPLE_SIGNING_IDENTITY: ${{ matrix.apple_signing_identity }}
         with:
           tagName: v__VERSION__
-          releaseName: pi-agent-desktop v__VERSION__
+          releaseName: PiD v__VERSION__
           # The body is filled in by the manifest job from CHANGELOG.md
           # (scripts/release-notes.mjs); tauri-action only needs a placeholder
           # so the draft exists before the installers land.
@@ -131,14 +131,14 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Check out pi-agent-desktop
+      - name: Check out pid
         uses: actions/checkout@v7
 
       - name: Upload component manifest and write the release notes
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          version="$(node -p "require('./src-tauri/pi-agent-desktop-package.json').version")"
+          version="$(node -p "require('./src-tauri/pid-package.json').version")"
           gh release upload "v$version" src-tauri/resources/component-versions.json --clobber
           # The body comes from CHANGELOG.md, so it follows the version instead of
           # a hand-written paragraph that went stale at 0.7.7.
@@ -217,8 +217,8 @@ jobs:
 
 
 
-  # Keeps Casks/pi-agent.rb (the Homebrew tap: `brew tap abcwyc/pi-agent-desktop
-  # https://github.com/abcwyc/pi-agent-desktop`) on the release that was just
+  # Keeps Casks/pi-agent.rb (the Homebrew tap: `brew tap RebotTan/pi-agent-desktop
+  # https://github.com/RebotTan/pi-agent-desktop`) on the release that was just
   # published. Runs only after `manifest` has published it, so a draft or partly
   # failed release never reaches Homebrew users. Placed after `notify` because
   # release-workflows.test.mjs slices the manifest job up to `notify:`.
@@ -229,7 +229,7 @@ jobs:
     if: false
     runs-on: ubuntu-latest
     steps:
-      - name: Check out pi-agent-desktop
+      - name: Check out pid
         uses: actions/checkout@v7
         with:
           ref: main
@@ -239,7 +239,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          version="$(node -p "require('./src-tauri/pi-agent-desktop-package.json').version")"
+          version="$(node -p "require('./src-tauri/pid-package.json').version")"
           digest="$(gh release view "v$version" --json assets \
             --jq '.assets[] | select(.name | endswith("_aarch64.dmg")) | .digest')"
           if [ -z "$digest" ]; then

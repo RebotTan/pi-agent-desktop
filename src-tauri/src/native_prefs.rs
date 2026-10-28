@@ -203,7 +203,7 @@ fn clear_webview_caches(app: &AppHandle) {
         // app_config_dir on macOS is ~/Library/Application Support/<identifier>;
         // WKWebView WebsiteKit caches live under ~/Library/WebKit/<bundle-id>.
         if let Some(home) = dirs_home_dir() {
-            let wk = home.join("Library/WebKit/com.abcwyc.pi-agent");
+            let wk = home.join("Library/WebKit/com.rebotan.pid");
             if wk.is_dir() {
                 let _ = fs::remove_dir_all(&wk);
             }

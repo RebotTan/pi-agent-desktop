@@ -1,8 +1,8 @@
-# Pi Agent
+# PiD
 
 **English** | [简体中文](./README.zh-CN.md)
 
-`pi-agent-desktop` is a local AI agent desktop app for macOS and Windows. It packages the agent capabilities of [pi](https://github.com/earendil-works/pi) into a standalone, installable application.
+`pid` is a local AI agent desktop app for macOS and Windows. It packages the agent capabilities of [pi](https://github.com/earendil-works/pi) into a standalone, installable application.
 
 ## Features
 
@@ -14,28 +14,28 @@
 - Scheduled tasks: run a saved prompt in a new session on a schedule (hourly, daily, weekly, a custom cron expression, or once). They run while the app is open, even with its window hidden, default to read-only tools, catch up once after a sleep, and notify you when a run succeeds or fails.
 - Preview source code, diffs, Markdown, images, audio, PDF, and DOCX files.
 - Dark mode, automatic session naming, a completion sound, and restored run state.
-- A weekly check of the latest stable `pi-agent-desktop` GitHub Release, with an in-app notice only when the installed app is older.
-- One upgrade button installs a complete, signed new build of Pi Agent and restarts automatically.
+- A weekly check of the latest stable `pid` GitHub Release, with an in-app notice only when the installed app is older.
+- One upgrade button installs a complete, signed new build of PiD and restarts automatically.
 
-![Pi Agent light mode](./docs/screenshots/pi-agent-light.webp)
+![PiD light mode](./docs/screenshots/pi-agent-light.webp)
 
-![Pi Agent dark mode](./docs/screenshots/pi-agent-dark.webp)
+![PiD dark mode](./docs/screenshots/pi-agent-dark.webp)
 
-**[⬇️ Download Pi Agent (macOS / Windows)](https://github.com/abcwyc/pi-agent-desktop/releases)**
+**[⬇️ Download PiD (macOS / Windows)](https://github.com/RebotTan/pid/releases)**
 
-Repository: [abcwyc/pi-agent-desktop](https://github.com/abcwyc/pi-agent-desktop)
+Repository: [RebotTan/pid](https://github.com/RebotTan/pid)
 
 ## Installation And Usage
 
 ### Install The Desktop App
 
-Builds are available from [GitHub Releases](https://github.com/abcwyc/pi-agent-desktop/releases):
+Builds are available from [GitHub Releases](https://github.com/RebotTan/pid/releases):
 
 - Apple Silicon Mac: download the `aarch64.dmg`, open it, and drag the app into `Applications`. Official releases do not build for Intel Macs.
 - Apple Silicon Mac with [Homebrew](https://brew.sh): install from this repository's tap. The tap is added from the repo URL, so the first command is needed once:
 
   ```bash
-  brew tap abcwyc/pi-agent-desktop https://github.com/abcwyc/pi-agent-desktop
+  brew tap RebotTan/pid https://github.com/RebotTan/pid
   brew install --cask pi-agent
   ```
 
@@ -46,19 +46,19 @@ Builds are available from [GitHub Releases](https://github.com/abcwyc/pi-agent-d
 
 Official releases support Apple Silicon Macs running macOS 11 or later, Windows 10/11 x64, and Linux x64 distributions with WebKitGTK 4.1 and GTK 3. The desktop package bundles the Next.js server, the Node.js runtime, and the current Pi SDK, so the local server starts with the app — no separate terminal, Node.js installation, or manually started web server is required.
 
-> Installing Pi Agent gives you the agent inside the app, but it does not install a global `pi` command. If you also want the Pi CLI in your terminal, install it separately by following the [pi project](https://github.com/earendil-works/pi) instructions.
+> Installing PiD gives you the agent inside the app, but it does not install a global `pi` command. If you also want the Pi CLI in your terminal, install it separately by following the [pi project](https://github.com/earendil-works/pi) instructions.
 
 > **macOS blocks the first launch**: the macOS build is not yet signed with an Apple Developer ID or notarized, so Gatekeeper may say the developer cannot be verified or that the app "is damaged and can't be opened" (Homebrew installs included). Click "Open Anyway" in System Settings › Privacy & Security, or run:
 >
 > ```bash
-> xattr -dr com.apple.quarantine "/Applications/Pi Agent.app"
+> xattr -dr com.apple.quarantine "/Applications/PiD.app"
 > ```
 
 Before signed auto-updates can be used for the first time, an older build without the updater has to be replaced by manually installing a signed one. Upgrades then happen from Settings.
 
 ### Use Existing Pi Data
 
-Pi Agent reads Pi's local data directory by default:
+PiD reads Pi's local data directory by default:
 
 ```text
 ~/.pi/agent/
@@ -76,23 +76,23 @@ Model keys and session data stay on your machine. The file-browsing API only all
 
 ## Update Checks And Upgrades
 
-Pi Agent checks the latest stable release of `abcwyc/pi-agent-desktop` at most once every seven days:
+PiD checks the latest stable release of `RebotTan/pid` at most once every seven days:
 
-- `abcwyc/pi-agent-desktop`
+- `RebotTan/pid`
 - `earendil-works/pi`
 - `agegr/pi-web`
 
 The versioning and upgrade rules are:
 
-1. The latest stable `pi-agent-desktop` release is the only source used for update reminders.
+1. The latest stable `pid` release is the only source used for update reminders.
 2. The upgrade button in Settings becomes enabled only when the installed desktop app version is older.
-3. When several components need updating, the release automation syncs and verifies them in the order `pi → pi-web → pi-agent-desktop`.
+3. When several components need updating, the release automation syncs and verifies them in the order `pi → pi-web → pid`.
 4. Nothing patches an individual JavaScript package inside an installed app. The app downloads one complete signed build containing all three components at their latest versions.
 5. The app restarts after installation, so all three components land in the same verified release state at once.
 
 This keeps the components in a desktop install consistent, and avoids the runtime incompatibilities that come from swapping `pi` or `pi-web` on their own.
 
-If a new upstream version has been detected but the signed `pi-agent-desktop` release containing it is not published yet, Settings says that no signed complete build is installable for now. The app never falls back to downloading unsigned files or partially overwriting dependencies.
+If a new upstream version has been detected but the signed `pid` release containing it is not published yet, Settings says that no signed complete build is installable for now. The app never falls back to downloading unsigned files or partially overwriting dependencies.
 
 The full sync, signing, and release configuration is described in [Desktop updates and releases](./docs/desktop-updates.md).
 
@@ -132,7 +132,7 @@ Do not run `next build` or `npm run build` during normal development. They write
 
 ### Network Exposure (LAN)
 
-`npm run dev` and `npm start` listen on `127.0.0.1` only. `npm run dev:lan`, `npm run start:lan` and `pi-web -H 0.0.0.0` listen on every interface. Pi Agent can run shell commands (the terminal tab and the agent's own tools) and read files as you, so **anyone who can reach the port gets the same access**. Before using a LAN mode, set a password:
+`npm run dev` and `npm start` listen on `127.0.0.1` only. `npm run dev:lan`, `npm run start:lan` and `pi-web -H 0.0.0.0` listen on every interface. PiD can run shell commands (the terminal tab and the agent's own tools) and read files as you, so **anyone who can reach the port gets the same access**. Before using a LAN mode, set a password:
 
 ```bash
 PI_WEB_PASSWORD='choose-a-long-passphrase' npm run dev:lan
@@ -199,7 +199,7 @@ The repository contains two chained automation workflows:
   - High or medium risk files hit → pushes a `sync/pi-web-<tag>` branch and opens a PR with the boundary report, and does **not** trigger a release. Merging that PR is what ships a version.
 - [`release.yml`](./.github/workflows/release.yml): after an explicit trigger from the component sync workflow, serially builds the Apple Silicon (`aarch64`) DMG, the Linux x64 `.deb`, and the Windows x64 NSIS `-setup.exe`. No Intel Mac build is produced. The release stays a draft until the updater signature files, `latest.json`, and the component manifest for all platforms are uploaded — the `manifest` job depends on the **entire** build matrix, so a failure on any platform keeps it from being published. Build failures create or update a `release-failure` issue.
 
-Upstream sync uses a Git merge, so this fork's Pi Agent branding, settings entry points, and upgrade logic survive as local modifications. Merge conflicts stop the workflow, which is the safe failure mode. The genuinely dangerous case is a **conflict-free but semantically wrong** merge: upstream changed a region this fork also changed, Git merged it cleanly, and the tests still pass. The boundary intersection above exists for exactly that case; the rules are in [Ownership boundaries](./docs/ownership-boundaries.md).
+Upstream sync uses a Git merge, so this fork's PiD branding, settings entry points, and upgrade logic survive as local modifications. Merge conflicts stop the workflow, which is the safe failure mode. The genuinely dangerous case is a **conflict-free but semantically wrong** merge: upstream changed a region this fork also changed, Git merged it cleanly, and the tests still pass. The boundary intersection above exists for exactly that case; the rules are in [Ownership boundaries](./docs/ownership-boundaries.md).
 
 A failed sync creates or updates a `component-sync-failure` issue, so nothing piles up silently.
 
@@ -235,6 +235,6 @@ instrumentation.ts     Next.js server-side HTTP proxy initialization
 
 ## Credits And License
 
-The desktop integration of Pi Agent is provided by `pi-agent-desktop`; the core capabilities and the web interface come from [earendil-works/pi](https://github.com/earendil-works/pi) and [agegr/pi-web](https://github.com/agegr/pi-web) respectively. Thanks to those projects and their contributors.
+The desktop integration of PiD is provided by `pid`; the core capabilities and the web interface come from [earendil-works/pi](https://github.com/earendil-works/pi) and [agegr/pi-web](https://github.com/agegr/pi-web) respectively. Thanks to those projects and their contributors.
 
 Code in the root of this repository is under the MIT License in [`LICENSE`](./LICENSE). The code and dependencies of the three component projects remain subject to the licenses of their own repositories; keep the corresponding copyright and license notices when copying, modifying, or redistributing.

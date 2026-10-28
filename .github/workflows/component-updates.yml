@@ -16,7 +16,7 @@ jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out pi-agent-desktop
+      - name: Check out pid
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
@@ -102,7 +102,7 @@ jobs:
             fi
           fi
 
-          node scripts/bump-pi-agent-desktop-version.mjs
+          node scripts/bump-pid-version.mjs
           npm run release:manifest
 
       # A clean `git merge` is not evidence the two sides agree, so the gate has

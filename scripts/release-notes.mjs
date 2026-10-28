@@ -80,7 +80,7 @@ async function main() {
   const outIndex = args.indexOf("--out");
 
   const packageJson = JSON.parse(
-    await readFile(join(rootDir, "src-tauri", "pi-agent-desktop-package.json"), "utf8"),
+    await readFile(join(rootDir, "src-tauri", "pid-package.json"), "utf8"),
   );
   const version = versionIndex === -1 ? packageJson.version : args[versionIndex + 1];
   if (!version) {

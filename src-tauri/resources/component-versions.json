@@ -3,8 +3,8 @@
   "appVersion": "0.10.1",
   "components": [
     {
-      "id": "pi-agent-desktop",
-      "repository": "abcwyc/pi-agent-desktop",
+      "id": "pid",
+      "repository": "RebotTan/pi-agent-desktop",
       "version": "0.10.1"
     },
     {

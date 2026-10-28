@@ -26,13 +26,13 @@ if (
   problems.push(`pi-web is ${local["pi-web"]}; latest Release is ${remote["pi-web"].version}`);
 }
 if (
-  remote["pi-agent-desktop"]
-  && compareVersions(local["pi-agent-desktop"], remote["pi-agent-desktop"].version) <= 0
+  remote["pid"]
+  && compareVersions(local["pid"], remote["pid"].version) <= 0
 ) {
   // Equal is as wrong as older: the tag already exists, so the release job would fail
   // with `already_exists` after the whole matrix had built.
   problems.push(
-    `pi-agent-desktop is ${local["pi-agent-desktop"]}; it must be newer than the latest Release ${remote["pi-agent-desktop"].version}`,
+    `pid is ${local["pid"]}; it must be newer than the latest Release ${remote["pid"].version}`,
   );
 }
 
@@ -49,5 +49,5 @@ if (problems.length > 0) {
   throw new Error(`Release verification failed:\n- ${problems.join("\n- ")}`);
 }
 console.log(
-  `Verified pi-agent-desktop ${local["pi-agent-desktop"]}, pi ${local.pi}${isReleasePinValid(pins.pi, local.pi) ? " (pinned)" : ""}, pi-web ${local["pi-web"]}${isReleasePinValid(pins["pi-web"], local["pi-web"]) ? " (pinned)" : ""}.`,
+  `Verified pid ${local["pid"]}, pi ${local.pi}${isReleasePinValid(pins.pi, local.pi) ? " (pinned)" : ""}, pi-web ${local["pi-web"]}${isReleasePinValid(pins["pi-web"], local["pi-web"]) ? " (pinned)" : ""}.`,
 );

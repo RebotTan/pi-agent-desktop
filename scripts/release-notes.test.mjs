@@ -47,14 +47,14 @@ test("strips the changesets Patch/Minor/Major subheadings", () => {
 test("formats the bundled component versions", () => {
   const manifest = {
     components: [
-      { id: "pi-agent-desktop", version: "0.10.2" },
+      { id: "pid", version: "0.10.2" },
       { id: "pi", version: "1.4.0" },
       { id: "pi-web", version: "0.10.2" },
     ],
   };
   assert.equal(
     formatBundledComponents(manifest),
-    "Bundled components: pi-agent-desktop 0.10.2, pi 1.4.0, pi-web 0.10.2.",
+    "Bundled components: pid 0.10.2, pi 1.4.0, pi-web 0.10.2.",
   );
   assert.equal(formatBundledComponents({ components: [] }), "");
   assert.equal(formatBundledComponents({}), "");

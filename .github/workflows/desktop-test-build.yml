@@ -79,7 +79,7 @@ jobs:
         id: version
         shell: bash
         run: |
-          base="$(node -p "require('./src-tauri/pi-agent-desktop-package.json').version")"
+          base="$(node -p "require('./src-tauri/pid-package.json').version")"
           echo "value=${base}-${{ inputs.label }}" >> "$GITHUB_OUTPUT"
 
       - name: Prepare packaged Next.js server

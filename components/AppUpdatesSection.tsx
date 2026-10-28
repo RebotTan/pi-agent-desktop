@@ -63,7 +63,7 @@ export function AppUpdatesSection({ onBusyChange }: Props) {
   }, [busy, onBusyChange]);
 
   const appRelease = useMemo(
-    () => components.find((component) => component.project === "pi-agent-desktop"),
+    () => components.find((component) => component.project === "pid"),
     [components],
   );
   const updateAvailable = useMemo(

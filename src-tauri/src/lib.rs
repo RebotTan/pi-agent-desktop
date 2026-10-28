@@ -673,7 +673,7 @@ fn wait_for_server(
     while Instant::now() < deadline {
         if let Some(status) = child.try_wait()? {
             return Err(io::Error::other(format!(
-                "Pi Agent server exited early with {status}; see {}",
+                "PiD server exited early with {status}; see {}",
                 log_path.display()
             )));
         }
@@ -689,7 +689,7 @@ fn wait_for_server(
                 // EADDRINUSE while another process is answering on the same port.
                 if let Some(status) = child.try_wait()? {
                     return Err(io::Error::other(format!(
-                        "Pi Agent server exited during startup with {status}; see {}",
+                        "PiD server exited during startup with {status}; see {}",
                         log_path.display()
                     )));
                 }
@@ -703,7 +703,7 @@ fn wait_for_server(
     Err(io::Error::new(
         io::ErrorKind::TimedOut,
         format!(
-            "Pi Agent server did not start within {} seconds ({attempts} probes, last: {last_failure}); see {}",
+            "PiD server did not start within {} seconds ({attempts} probes, last: {last_failure}); see {}",
             timeout.as_secs(),
             log_path.display()
         ),
@@ -1015,9 +1015,9 @@ fn report_startup_failure(app: &AppHandle, error: &str) {
     let handle = app.clone();
     app.dialog()
         .message(format!(
-            "Pi Agent could not start its background service.\n\n{error}\n\nOpening the app again retries."
+            "PiD could not start its background service.\n\n{error}\n\nOpening the app again retries."
         ))
-        .title("Pi Agent")
+        .title("PiD")
         .kind(MessageDialogKind::Error)
         .show(move |_| handle.exit(1));
 }
@@ -1063,7 +1063,7 @@ fn instance_lock_path() -> Option<PathBuf> {
                 .filter(|value| !value.is_empty())
                 .map(|value| PathBuf::from(value).join(".config"))
         });
-    base.map(|value| value.join("com.abcwyc.pi-agent").join("pi-agent.lock"))
+    base.map(|value| value.join("com.rebotan.pid").join("pi-agent.lock"))
 }
 
 #[cfg(target_os = "linux")]
@@ -1257,7 +1257,7 @@ pub fn run() {
             };
             let Some(action) = action else { return };
             if let Err(error) = app.emit("pi-agent-menu-action", action) {
-                eprintln!("Pi Agent menu action failed: {error}");
+                eprintln!("PiD menu action failed: {error}");
             }
         })
         .manage(CloseQuits(Mutex::new(false)))
@@ -1384,7 +1384,7 @@ pub fn run() {
             }
         })
         .build(tauri::generate_context!())
-        .expect("failed to build Pi Agent desktop app");
+        .expect("failed to build PiD desktop app");
 
     app.run(|app_handle, event| match event {
         RunEvent::Exit => {

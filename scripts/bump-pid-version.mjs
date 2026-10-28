@@ -7,12 +7,12 @@ import {
   rootDir,
 } from "./release-components.mjs";
 
-const packagePath = join(rootDir, "src-tauri", "pi-agent-desktop-package.json");
+const packagePath = join(rootDir, "src-tauri", "pid-package.json");
 const cargoPath = join(rootDir, "src-tauri", "Cargo.toml");
 const lockPath = join(rootDir, "src-tauri", "Cargo.lock");
 const desktopPackage = JSON.parse(await readFile(packagePath, "utf8"));
 const current = normalizeVersion(desktopPackage.version);
-const released = await fetchRecentReleases("abcwyc/pi-agent-desktop", { allowMissing: true });
+const released = await fetchRecentReleases("RebotTan/pi-agent-desktop", { allowMissing: true });
 const next = nextDesktopVersion(current, released.map((release) => release.version));
 
 desktopPackage.version = next;
@@ -24,6 +24,6 @@ await writeFile(cargoPath, cargo.replace(/^(version\s*=\s*")[^"]+("\s*)$/m, `$1$
 const lock = await readFile(lockPath, "utf8");
 await writeFile(
   lockPath,
-  lock.replace(/(name = "pi-agent-desktop"\nversion = ")[^"]+("\n)/, `$1${next}$2`),
+  lock.replace(/(name = "pid"\nversion = ")[^"]+("\n)/, `$1${next}$2`),
 );
-console.log(`pi-agent-desktop ${current} -> ${next}`);
+console.log(`pid ${current} -> ${next}`);

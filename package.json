@@ -1,5 +1,5 @@
 {
-  "name": "@agegr/pi-web",
+  "name": "pid",
   "version": "0.10.3",
   "description": "Web UI for the pi coding agent",
   "homepage": "https://github.com/agegr/pi-web#readme",
