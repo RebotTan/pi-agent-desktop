@@ -1343,7 +1343,7 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
           }}
         >
           <div style={{ minWidth: 0, padding: `0 ${CHAT_COLUMN_PADDING}px` }}>
-            <div ref={messageContentRef} onPointerUp={captureQuotedSelection} style={{ width: "100%", minWidth: 0, maxWidth: "var(--chat-content-max-width, 820px)", margin: "0 auto" }}>
+            <div ref={messageContentRef} className="msg-rail-track" onPointerUp={captureQuotedSelection} style={{ width: "100%", minWidth: 0, maxWidth: "var(--chat-content-max-width, 820px)", margin: "0 auto" }}>
             {loading ? (
               <div className="chat-loading-hint">{t("chat.loadingSession")}</div>
             ) : (() => {
@@ -1426,10 +1426,23 @@ export function ChatWindow({ session, workspaceKind, searchTarget, onSearchTarge
                     compactError={options.recoverTruncation ? compactError : undefined}
                   />
                 );
-                if (!isVisible || currentRefIdx === undefined) return view;
+                // The rail row wraps every rendered message so the left column keeps
+                // one continuous numbered track. `data-role` drives the dot colour;
+                // the sequence number itself comes from a CSS counter on the track,
+                // which keeps DOM order authoritative (a folded process group simply
+                // stops incrementing) and avoids threading another map through here.
+                if (!isVisible || currentRefIdx === undefined) {
+                  return (
+                    <div key={`${keyPrefix}-${messageKey}`} className="msg-rail-row" data-role={msg.role}>
+                      {view}
+                    </div>
+                  );
+                }
                 return (
                   <div
                     key={`${keyPrefix}-${messageKey}`}
+                    className="msg-rail-row"
+                    data-role={msg.role}
                     data-entry-id={entryIds[idx]}
                     data-conversation-turn={turnIndexByMessageIndex.get(idx)}
                     ref={options.attachRef === false ? undefined : attachVisibleRef(idx, currentRefIdx)}>

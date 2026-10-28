@@ -9275,3 +9275,126 @@ html.dark .settings-background-swatch {
   border-color: var(--danger);
   color: #fff;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   0011 · 会话消息并行轨道（message rail）
+
+   每条渲染出来的消息左侧占一列 56px，承载「序号 + 贯穿连线 + 角色圆点」。
+   轨道是信息装置：序号给出这条动作在会话中的位置，连线表达连续，圆点区分
+   角色，彩色只留给「运行中」。全部视觉由伪元素生成，MessageView 的分支渲染
+   与消息数据流都不参与 —— 渲染层只提供 `.msg-rail-track`（计数作用域）和
+   `.msg-rail-row[data-role]` 两个 hook。
+
+   序号走 CSS 计数器而不是 JS 传入：DOM 顺序即真实展示顺序，折叠掉的
+   process group 不生成盒子就不递增，序号自然连续，也不需要在 ChatWindow 里
+   再维护一份 index → 序号映射。
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.msg-rail-track {
+  counter-reset: msg-rail;
+  --msg-rail-width: 56px;
+  --msg-rail-line: rgba(29, 29, 31, 0.16);
+  --msg-rail-seq: rgba(29, 29, 31, 0.44);
+  --msg-rail-dot-user: #1d1d1f;
+  --msg-rail-dot-assistant: rgba(29, 29, 31, 0.6);
+  --msg-rail-dot-tool: rgba(29, 29, 31, 0.26);
+  --msg-rail-dot-live: #1f9d63;
+  --msg-rail-bg: var(--bg);
+}
+
+html.dark .msg-rail-track {
+  --msg-rail-line: rgba(255, 255, 255, 0.16);
+  --msg-rail-seq: rgba(255, 255, 255, 0.42);
+  --msg-rail-dot-user: rgba(255, 255, 255, 0.95);
+  --msg-rail-dot-assistant: rgba(255, 255, 255, 0.62);
+  --msg-rail-dot-tool: rgba(255, 255, 255, 0.34);
+  --msg-rail-dot-live: #5fd39a;
+}
+
+.msg-rail-row {
+  counter-increment: msg-rail;
+  position: relative;
+  padding-left: var(--msg-rail-width, 56px);
+}
+
+/* 连线 + 圆点画在同一层：竖线居中贯穿整行，圆点带一圈背景色的环把线断开，
+   这样圆点不需要独立元素，也就不会在消息之间插入额外的盒模型。
+   `bottom: -56px` 是为了穿过消息之间的外边距：子元素 margin 畐塌到 row 外面，
+   row 本身高度不含它，不向下延伸就会在线条上留出断口。 */
+.msg-rail-row::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto -56px 0;
+  width: var(--msg-rail-width, 56px);
+  pointer-events: none;
+  background-repeat: no-repeat;
+  background-image:
+    radial-gradient(circle at 50% var(--msg-rail-dot-y, 24px),
+      var(--msg-rail-dot, var(--msg-rail-dot-assistant)) 0 3.2px,
+      var(--msg-rail-bg) 3.2px 5.4px,
+      transparent 5.4px),
+    linear-gradient(to right,
+      transparent calc(50% - 0.5px),
+      var(--msg-rail-line) calc(50% - 0.5px),
+      var(--msg-rail-line) calc(50% + 0.5px),
+      transparent calc(50% + 0.5px));
+}
+
+/* 序号用背景环压住连线，避免数字与竖线重叠。 */
+.msg-rail-row::after {
+  content: counter(msg-rail, decimal-leading-zero);
+  position: absolute;
+  left: 0;
+  top: 8px;
+  width: var(--msg-rail-width, 56px);
+  text-align: center;
+  pointer-events: none;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  line-height: 1;
+  letter-spacing: 0.04em;
+  color: var(--msg-rail-seq);
+  background: linear-gradient(
+    to bottom,
+    transparent 0,
+    var(--msg-rail-bg) 1px,
+    var(--msg-rail-bg) calc(100% - 1px),
+    transparent 100%
+  );
+}
+
+.msg-rail-row[data-role="user"]::before { --msg-rail-dot: var(--msg-rail-dot-user); }
+.msg-rail-row[data-role="assistant"]::before { --msg-rail-dot: var(--msg-rail-dot-assistant); }
+.msg-rail-row[data-role="toolResult"]::before,
+.msg-rail-row[data-role="custom"]::before,
+.msg-rail-row[data-role="bashExecution"]::before { --msg-rail-dot: var(--msg-rail-dot-tool); }
+
+/* 末行的圆点换成「运行中」色 —— 会话永远在最后一行继续发生，这一格绿色是
+   整个轨道上唯一的强调色。用 `:not(:has(~ .msg-rail-row))` 而不是
+   `:last-child`：真实 DOM 里 track 的子节点不全是 row（process group 把若干
+   行包进嵌套容器，其后还有 loading / spacer 节点），`last-child` 会落空。 */
+.msg-rail-row:not(:has(~ .msg-rail-row))::before {
+  inset: 0 auto 0 0;
+  --msg-rail-dot: var(--msg-rail-dot-live);
+}
+
+/* process group 把若干行包在非 row 容器里，容器自己已经缩进过一层。内层轨道
+   保持与外层同一个线位和字号，只把线尾的 bleed 收短，免得两条错位的线并排。 */
+.msg-rail-row .msg-rail-row::before,
+.msg-rail-track > *:not(.msg-rail-row) .msg-rail-row::before {
+  inset: 0 auto -40px 0;
+}
+
+/* 窄窗口下轨道不参与挤压：留白减半，序号保留。 */
+@media (max-width: 900px) {
+  .msg-rail-row {
+    padding-left: 34px;
+  }
+  .msg-rail-row::before,
+  .msg-rail-row::after {
+    width: 34px;
+  }
+  .msg-rail-row::after {
+    font-size: 8.5px;
+  }
+}
