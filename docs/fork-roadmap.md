@@ -6,7 +6,7 @@
 
 ---
 
-## 一、已交付（第一轮 + 第二轮，v0.10.2）
+## 一、已交付（第一轮 + 第二轮，v0.10.2 及以后）
 
 ### 1. 进程抽象层 —— AgentEngine 接口
 
@@ -115,6 +115,21 @@
 
 composer 上方审批卡（允许 / 拒绝）+ Settings › 工具审批 规则表。窗口隐藏时轮询暂停；`ok: false` 视为他人已结算并重取，不报用户无法处理的错。
 
+### 10. 手机 / LAN 访问可用性
+
+| 项 | 值 |
+|---|---|
+| commit | 见 0014 ticket |
+| seam | `app/native-theme.css` 末尾的 `@media (max-width: 640px)` 块 |
+| 文件 | `app/native-theme.css` |
+| 解锁 | 手机发 prompt、批准工具调用（Q7=B 的核心诉求） |
+
+**勘误**：原计划写的「Web 鉴权层 1–2 天」不存在待做项 —— pi-web 上游已经具备完整密码鉴权：`lib/web-auth.ts` + `proxy.ts` middleware（cookie / Basic auth）+ `/login` 页面 + `lib/auth-throttle.ts` 全局限速 + `bin/network-exposure-warning.js`（无 `PI_WEB_PASSWORD` 时拒绝监听非 loopback）。`lib/request-security.ts:107` 对 IP 字面量直接放行（IP 无法 DNS rebind），所以局域网 IP 无需白名单。
+
+真正的缺口是**控件尺寸**。桌面尺寸的按钮在 390px 宽的手机上低于 44px 可点范围：审批卡按钮 26px、登录页输入 30px / 按钮 34px。本项用一条移动端媒体查询把它们放大到 40–44px，两枚审批按钮等宽铺满；桌面端不受影响（规则在 ≥641px 全部不生效）。
+
+移动端已经合格的项（实测，未改）：textarea 16px 不触发 iOS 缩放、轨道 34px、`viewport-fit=cover` + `interactive-widget=resizes-content`、无横向溢出、侧边栏抽屉正常滑出。
+
 ---
 
 ## 二、待做（第三轮及以后）
@@ -122,17 +137,6 @@ composer 上方审批卡（允许 / 拒绝）+ Settings › 工具审批 规则�
 按投入产出排序。每项标注：依赖的 seam、解锁的能力、预估投入、优先级。
 
 ### 高优先级（直接影响可用性）
-
-#### 10. Web 鉴权层
-
-| 项 | 值 |
-|---|---|
-| seam | `/api/agent/*` 路由前置中间件 |
-| 解锁 | 手机发 prompt / 批准工具调用（你 Q7=B 的核心诉求） |
-| 投入 | 1–2 天 |
-| 优先级 | ★★★ |
-
-当前 `/api/agent/*` 无鉴权，只能本机用。加一层 token/密码鉴权 + 局域网发现，手机扫码或输 token 连上。复用 pi-web 既有的 web-auth 节流框架。
 
 #### 11. 插件 UI contribution 落地（第一个真实插件）
 
@@ -267,4 +271,4 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 |---|---|
 | 0.10.1 | PR-1~PR-6（5 个 seam + 插件骨架）+ 发版基建 + releaseBody 自动化 |
 | 0.10.2 | PR-5 `session_ended` 端测（`b02ad78`）+ 平台裁剪（`6e08e34`/`a6da4bc`）+ releaseBody（`c35ae95`）+ 消息轨道（`e33c22d`）+ 审批 UI（`f5f8495`） |
-| 未定 | #10~#19 待做项，按优先级逐个 PR |
+| 未定 | #11~#19 待做项，按优先级逐个 PR |

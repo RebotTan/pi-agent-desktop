@@ -9682,3 +9682,67 @@ html.dark .msg-rail-track {
 .tool-policy-rule .tool-policy-button.is-quiet {
   margin-left: auto;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   0014 · 移动端触摸目标（LAN / 手机访问）
+
+   手机上的目标是「发一个 prompt」和「批准或拒绝一次工具调用」。桌面端的
+   控件尺寸在 390px 宽的屏幕上低于可点范围：审批卡按钮 26px 高、登录页输入
+   30px、登录按钮 34px。iOS 建议 44px，Material 48px。这里只放大拇指真正
+   要点的东西，其余保持上游尺寸，免得整屏变松。
+
+   断点与 useIsMobile / globals.css 一致（max-width: 640px）。
+   ══════════════════════════════════════════════════════════════════════════ */
+@media (max-width: 640px) {
+  /* 审批卡：手机端的核心操作，两个按钮等宽铺满，指哪打哪。 */
+  .approval-card {
+    padding: 12px;
+    gap: 10px;
+  }
+
+  .approval-card-args {
+    max-height: 30dvh;
+    font-size: var(--fs-small);
+  }
+
+  .approval-card-actions {
+    gap: 8px;
+  }
+
+  .approval-card-button {
+    flex: 1;
+    min-height: 44px;
+    padding: 0 16px;
+    font-size: var(--fs-body);
+  }
+
+  /* 登录页在 globals.css（上游，字节锁定），只能在这里加高。密码框和登录
+     按钮同高同排，输入区一起变高，thumb 一次就能点中。 */
+  .web-login-composer {
+    padding: 6px 6px 6px 14px;
+  }
+
+  .web-login-form input {
+    height: 40px;
+  }
+
+  .web-login-form button {
+    min-height: 40px;
+    padding: 0 16px;
+  }
+
+  /* 规则编辑器：删除按钮在触屏上很容易误触到相邻行，拉开一点间距。 */
+  .tool-policy-rule {
+    padding: 9px 9px;
+  }
+
+  .tool-policy-rule .tool-policy-button.is-quiet {
+    min-height: 32px;
+    padding: 0 10px;
+  }
+
+  .tool-policy-input,
+  .tool-policy-button {
+    height: 40px;
+  }
+}
