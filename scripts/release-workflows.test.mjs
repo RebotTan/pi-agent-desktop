@@ -179,10 +179,14 @@ test("release workflow publishes Linux rpm and Windows x64 installers", async ()
   assert.match(workflow, /runner: windows-latest/);
   assert.match(workflow, /target: x86_64-pc-windows-msvc/);
   assert.match(workflow, /--bundles nsis/);
-  assert.doesNotMatch(workflow, /runner: macos-26/);
-  assert.doesNotMatch(workflow, /target: aarch64-apple-darwin/);
+  // macOS is configured but skipped via the build-job if guard.
+  assert.match(workflow, /runner: macos-26/);
+  assert.match(workflow, /target: aarch64-apple-darwin/);
+  assert.match(workflow, /if: matrix.target != .aarch64-apple-darwin./);
   assert.doesNotMatch(workflow, /--bundles deb/);
-  assert.doesNotMatch(workflow, /homebrew:/);
+  // homebrew stays defined but is paused with if: false (no macOS DMG).
+  assert.match(workflow, /homebrew:/);
+  assert.match(workflow, /if: false/);
   assert.match(workflow, /uploadUpdaterJson: true/);
   assert.match(workflow, /gh release edit "v\$version" --draft=false --latest --prerelease=false/);
 });

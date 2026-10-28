@@ -12,11 +12,18 @@ concurrency:
 
 jobs:
   build:
+    # macOS is configured but temporarily skipped (this fork ships Windows
+    # and Linux rpm only for now). Remove the `if` guard to re-enable macOS.
+    if: matrix.target != 'aarch64-apple-darwin'
     strategy:
       fail-fast: false
       max-parallel: 1
       matrix:
         include:
+          - runner: macos-26
+            target: aarch64-apple-darwin
+            args: --target aarch64-apple-darwin
+            apple_signing_identity: "-"
           - runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             args: --target x86_64-unknown-linux-gnu --bundles rpm
@@ -54,6 +61,18 @@ jobs:
         env:
           TAURI_UPDATER_PUBLIC_KEY: ${{ secrets.TAURI_UPDATER_PUBLIC_KEY }}
         run: node scripts/configure-updater-public-key.mjs
+
+      # The window controls are drawn by the AppKit the binary links, not the
+      # one it runs on: an SDK 15 build shows the legacy traffic lights even on
+      # macOS 26+, and with different button geometry (0.7.1 shipped from a
+      # macOS 15 runner that way). Fail here instead of shipping that again.
+      # Skipped along with the macOS matrix entry above while macOS is paused.
+      - name: Require the macOS 26 SDK
+        if: runner.os == 'macOS'
+        run: |
+          sdk="$(xcrun --sdk macosx --show-sdk-version)"
+          echo "macOS SDK $sdk"
+          test "${sdk%%.*}" -ge 26
 
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
@@ -232,3 +251,43 @@ jobs:
           fi
 
 
+
+  # Keeps Casks/pi-agent.rb (the Homebrew tap: `brew tap abcwyc/pi-agent-desktop
+  # https://github.com/abcwyc/pi-agent-desktop`) on the release that was just
+  # published. Runs only after `manifest` has published it, so a draft or partly
+  # failed release never reaches Homebrew users. Placed after `notify` because
+  # release-workflows.test.mjs slices the manifest job up to `notify:`.
+  # Skipped while macOS is paused (no aarch64 DMG is produced); remove the
+  # `if: false` guard together with the build-job macOS guard to re-enable.
+  homebrew:
+    needs: manifest
+    if: false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out pi-agent-desktop
+        uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Point the cask at the published DMG
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="$(node -p "require('./src-tauri/pi-agent-desktop-package.json').version")"
+          digest="$(gh release view "v$version" --json assets \
+            --jq '.assets[] | select(.name | endswith("_aarch64.dmg")) | .digest')"
+          if [ -z "$digest" ]; then
+            echo "No aarch64 DMG digest on release v$version" >&2
+            exit 1
+          fi
+          node scripts/update-homebrew-cask.mjs "$version" "$digest"
+          if git diff --quiet -- Casks; then
+            echo "Cask already at $version"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/pi-agent.rb
+          git commit -m "chore(homebrew): update cask to $version"
+          git push origin HEAD:main
