@@ -1,5 +1,11 @@
 # @agegr/pi-web
 
+## 0.10.4
+
+### Patch Changes
+
+- [`ce0710b`](https://github.com/RebotTan/pi-agent-desktop/commit/ce0710b01fa262e4ff376111e43fff09c430defd) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Rename the desktop app and distribution to PiD (identifier `com.rebotan.pid`, binary `pid`).
+
 ## 0.10.3
 
 ### Patch Changes
