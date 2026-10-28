@@ -1,5 +1,11 @@
 # @agegr/pi-web
 
+## 0.10.5
+
+### Patch Changes
+
+- [`2b47abc`](https://github.com/RebotTan/pi-agent-desktop/commit/2b47abc463b639b8af287ef5b10a7ad3d2c88921) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Switch the app icon to a light tile with the dark pi glyph, a grey base and a hairline edge, and add `scripts/build-app-icon.mjs` to rebuild every size from one source image.
+
 ## 0.10.4
 
 ### Patch Changes
