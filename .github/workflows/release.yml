@@ -13,17 +13,19 @@ concurrency:
 jobs:
   build:
     # macOS is configured but temporarily skipped (this fork ships Windows
-    # and Linux rpm only for now). Remove the `if` guard to re-enable macOS.
-    if: matrix.target != 'aarch64-apple-darwin'
+    # and Linux rpm only for now). Re-add the macos-26 / aarch64-apple-darwin
+    # entry below to re-enable macOS; GitHub Actions forbids guarding a job
+    # with a matrix-target condition (matrix is not in scope at the job
+    # level), so the skip is expressed by omitting the entry.
     strategy:
       fail-fast: false
       max-parallel: 1
       matrix:
         include:
-          - runner: macos-26
-            target: aarch64-apple-darwin
-            args: --target aarch64-apple-darwin
-            apple_signing_identity: "-"
+          # - runner: macos-26
+          #   target: aarch64-apple-darwin
+          #   args: --target aarch64-apple-darwin
+          #   apple_signing_identity: "-"
           - runner: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
             args: --target x86_64-unknown-linux-gnu --bundles rpm

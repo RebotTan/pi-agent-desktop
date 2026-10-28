@@ -192,10 +192,13 @@ test("release workflow publishes Linux rpm and Windows x64 installers", async ()
   assert.match(workflow, /runner: windows-latest/);
   assert.match(workflow, /target: x86_64-pc-windows-msvc/);
   assert.match(workflow, /--bundles nsis/);
-  // macOS is configured but skipped via the build-job if guard.
-  assert.match(workflow, /runner: macos-26/);
-  assert.match(workflow, /target: aarch64-apple-darwin/);
-  assert.match(workflow, /if: matrix.target != .aarch64-apple-darwin./);
+  // macOS is configured but skipped by commenting out its matrix entry.
+  // GitHub Actions forbids a job-level `if: matrix.target != ...` guard
+  // (matrix is not in scope at the job level), so the skip is expressed by
+  // omitting the entry. The commented entry below documents how to restore it.
+  assert.match(workflow, /# .*runner: macos-26/);
+  assert.match(workflow, /# .*target: aarch64-apple-darwin/);
+  assert.doesNotMatch(workflow, /if: matrix\.target !=/);
   assert.doesNotMatch(workflow, /--bundles deb/);
   // homebrew stays defined but is paused with if: false (no macOS DMG).
   assert.match(workflow, /homebrew:/);
