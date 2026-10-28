@@ -6,7 +6,7 @@
 
 ---
 
-## 一、已交付（第一轮，v0.10.1）
+## 一、已交付（第一轮 + 第二轮，v0.10.2）
 
 ### 1. 进程抽象层 —— AgentEngine 接口
 
@@ -93,13 +93,37 @@
 
 ---
 
-## 二、待做（第二轮及以后）
+### 8. 会话消息轨道
+
+| 项 | 值 |
+|---|---|
+| commit | `e33c22d` |
+| seam | `app/native-theme.css` 的 `.msg-rail-track` / `.msg-rail-row[data-role]` |
+| 文件 | `components/ChatWindow.tsx`、`app/native-theme.css` |
+| 解锁 | 消息流可读性；轨道节点后续可挂跳转 / 折叠 / 审批状态 |
+
+每条渲染消息左侧 56px 轨道：CSS 计数器出的序号 + 贯穿连线 + 角色圆点，末行圆点为「运行中」绿。序号走 DOM 顺序而非 JS 传入，折叠的 process group 自然不递增，也不用在渲染层再维护一份 index→序号映射。
+
+### 9. 工具审批 UI
+
+| 项 | 值 |
+|---|---|
+| commit | `f5f8495` |
+| seam | `/api/tool-policy` + `/api/tool-policy/settle`（PR-4 的 HTTP 契约） |
+| 文件 | `components/ApprovalPrompts.tsx`、`components/ToolPolicySettings.tsx`、`components/SettingsPanel.tsx`、`lib/settings-navigation.ts` |
+| 解锁 | 手机 / web 端审批（#10 的前置）、规则可视化编辑 |
+
+composer 上方审批卡（允许 / 拒绝）+ Settings › 工具审批 规则表。窗口隐藏时轮询暂停；`ok: false` 视为他人已结算并重取，不报用户无法处理的错。
+
+---
+
+## 二、待做（第三轮及以后）
 
 按投入产出排序。每项标注：依赖的 seam、解锁的能力、预估投入、优先级。
 
 ### 高优先级（直接影响可用性）
 
-#### 8. Web 鉴权层
+#### 10. Web 鉴权层
 
 | 项 | 值 |
 |---|---|
@@ -110,18 +134,7 @@
 
 当前 `/api/agent/*` 无鉴权，只能本机用。加一层 token/密码鉴权 + 局域网发现，手机扫码或输 token 连上。复用 pi-web 既有的 web-auth 节流框架。
 
-#### 9. 工具审批 UI 面板
-
-| 项 | 值 |
-|---|---|
-| seam | PR-4 的 `/api/tool-policy` + `/api/tool-policy/settle` |
-| 解锁 | 用户可见的审批卡片、规则编辑器 |
-| 投入 | 半天 |
-| 优先级 | ★★★ |
-
-PR-4 后端已通（规则表 + pending 审批 + settle），缺前端：①审批卡（pending 时弹卡，批准/拒绝按钮调 settle）②规则编辑器（pattern/action 表格，调 tool-policy API）。
-
-#### 10. 插件 UI contribution 落地（第一个真实插件）
+#### 11. 插件 UI contribution 落地（第一个真实插件）
 
 | 项 | 值 |
 |---|---|
@@ -134,7 +147,7 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 
 ### 中优先级（架构演进）
 
-#### 11. SidecarEngine（多 Agent 并行隔离）
+#### 12. SidecarEngine（多 Agent 并行隔离）
 
 | 项 | 值 |
 |---|---|
@@ -145,7 +158,7 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 
 每 worker 一个 `pi --mode rpc` 子进程（参考 PiDeck/PI-Desktop 思想，不抄代码避 LGPL）。`SidecarEngine` 实现 `AgentEngine` 接口，`startSession` spawn 子进程，`send` 走 stdio JSON-RPC，`events` 转发子进程事件。主进程 `InProcessAgentEngine` 不变，编排器按需选引擎。
 
-#### 12. SessionStore SQLite 实现
+#### 13. SessionStore SQLite 实现
 
 | 项 | 值 |
 |---|---|
@@ -156,7 +169,7 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 
 新增 `SqliteSessionStore` 实现 `SessionStore` 接口，JSONL 写入时同步镜像到 SQLite（写路径仍走 SDK，SQLite 只做读索引）。`getSessionStore()` 按配置切实现。
 
-#### 13. 外部会话导入转换器
+#### 14. 外部会话导入转换器
 
 | 项 | 值 |
 |---|---|
@@ -169,7 +182,7 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 
 ### 低优先级（纯 UI / 锦上添花）
 
-#### 14. 事件总线出口：webhook / 飞书
+#### 15. 事件总线出口：webhook / 飞书
 
 | 项 | 值 |
 |---|---|
@@ -180,18 +193,18 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 
 订阅 `AgentEventBus`，按规则转发到 webhook。配置存 `~/.pi/agent/webhooks.json`。
 
-#### 15. 用量统计
+#### 16. 用量统计
 
 | 项 | 值 |
 |---|---|
-| seam | 事件总线（PR-5）+ SessionStore SQLite（#12） |
+| seam | 事件总线（PR-5）+ SessionStore SQLite（#13） |
 | 解锁 | 用量热力图/每日/模型/项目统计 |
 | 投入 | 2–3 天 |
 | 优先级 | ★☆☆ |
 
 订阅 usage 事件 → 持久化到 SQLite → 前端统计面板。
 
-#### 16. SSH RemoteEngine
+#### 17. SSH RemoteEngine
 
 | 项 | 值 |
 |---|---|
@@ -202,7 +215,7 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 
 `RemoteEngine` 实现 `AgentEngine`，`startSession` SSH 连远程机起 pi sidecar，`send`/`events` 走 SSH 通道。远期。
 
-#### 17. Plan Mode
+#### 18. Plan Mode
 
 | 项 | 值 |
 |---|---|
@@ -213,7 +226,7 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 
 启动参数带 mode=plan，agent 只规划不执行，计划确认后切 mode=execute。复用审批管道的「挂起等确认」机制。
 
-#### 18. 上下文蒸发
+#### 19. 上下文蒸发
 
 | 项 | 值 |
 |---|---|
@@ -253,5 +266,5 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 | 版本 | 内容 |
 |---|---|
 | 0.10.1 | PR-1~PR-6（5 个 seam + 插件骨架）+ 发版基建 + releaseBody 自动化 |
-| 0.10.2+ | PR-5 session_ended 端测（`b02ad78`）+ 平台裁剪（`6e08e34`/`a6da4bc`）+ releaseBody（`c35ae95`），待 version PR 合并后发版 |
-| 未定 | #8~#18 待做项，按优先级逐个 PR |
+| 0.10.2 | PR-5 `session_ended` 端测（`b02ad78`）+ 平台裁剪（`6e08e34`/`a6da4bc`）+ releaseBody（`c35ae95`）+ 消息轨道（`e33c22d`）+ 审批 UI（`f5f8495`） |
+| 未定 | #10~#19 待做项，按优先级逐个 PR |
