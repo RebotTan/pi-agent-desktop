@@ -163,7 +163,7 @@ test("the manifest job only publishes when every platform succeeded", async () =
   assert.match(manifestJob, /--draft=false --latest --prerelease=false/);
 });
 
-test("release workflow publishes Apple Silicon, Linux x64, and Windows x64 installers", async () => {
+test("release workflow publishes Linux rpm and Windows x64 installers", async () => {
   const workflow = await readText(
     join(root, ".github", "workflows", "release.yml"),
     "utf8",
@@ -171,20 +171,18 @@ test("release workflow publishes Apple Silicon, Linux x64, and Windows x64 insta
 
   assert.match(workflow, /workflow_dispatch:/);
   assert.match(workflow, /max-parallel: 1/);
-  assert.match(workflow, /runner: macos-26/);
-  // Linking an older SDK ships the legacy traffic lights (0.7.1).
-  assert.match(workflow, /--show-sdk-version\)"\n\s+echo "macOS SDK \$sdk"\n\s+test "\$\{sdk%%\.\*\}" -ge 26/);
-  assert.match(workflow, /target: aarch64-apple-darwin/);
   assert.match(workflow, /runner: ubuntu-24\.04/);
   assert.match(workflow, /target: x86_64-unknown-linux-gnu/);
-  assert.match(workflow, /--bundles deb/);
+  assert.match(workflow, /--bundles rpm/);
   assert.match(workflow, /libwebkit2gtk-4\.1-dev/);
   assert.match(workflow, /libayatana-appindicator3-dev/);
   assert.match(workflow, /runner: windows-latest/);
   assert.match(workflow, /target: x86_64-pc-windows-msvc/);
   assert.match(workflow, /--bundles nsis/);
-  assert.doesNotMatch(workflow, /x86_64-apple-darwin/);
-  assert.doesNotMatch(workflow, /macos-15/);
+  assert.doesNotMatch(workflow, /runner: macos-26/);
+  assert.doesNotMatch(workflow, /target: aarch64-apple-darwin/);
+  assert.doesNotMatch(workflow, /--bundles deb/);
+  assert.doesNotMatch(workflow, /homebrew:/);
   assert.match(workflow, /uploadUpdaterJson: true/);
   assert.match(workflow, /gh release edit "v\$version" --draft=false --latest --prerelease=false/);
 });
