@@ -40,6 +40,7 @@ import { ConfigButton, ConfigSwitch } from "./SettingsUi";
 import { ArtifactsSettingRow } from "./ArtifactsSettingRow";
 import { ChatsSettingsSection } from "./ChatsSettingsSection";
 import { AppearanceSettings } from "./AppearanceSettings";
+import { ToolPolicySettings } from "./ToolPolicySettings";
 
 interface Props {
   cwd: string | null;
@@ -80,6 +81,7 @@ export function SettingsSectionIcon({ section, size = 16, strokeWidth = 1.8 }: {
   if (section === "skills") return <svg {...common}><path d="m12 2-10 5 10 5 10-5-10-5Z" /><path d="m2 12 10 5 10-5M2 17l10 5 10-5" /></svg>;
   if (section === "agents") return <svg {...common} className="settings-section-icon is-agent"><rect x="5" y="7" width="14" height="11" rx="2" /><path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" /></svg>;
   if (section === "mcp") return <svg {...common}><rect x="3" y="3" width="18" height="7" rx="2" /><rect x="3" y="14" width="18" height="7" rx="2" /><path d="M7 6.5h.01M7 17.5h.01M11 6.5h6M11 17.5h6" /></svg>;
+  if (section === "tools") return <svg {...common}><path d="M12 3 4 7v6c0 4.2 3.4 7.4 8 8 4.6-.6 8-3.8 8-8V7l-8-4Z" /><path d="m9 12 2 2 4-4" /></svg>;
   if (section === "plugins") return <svg {...common}><path d="M9 7V2M15 7V2M6 13V8a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5a6 6 0 0 1-12 0ZM12 19v3" /></svg>;
   return <svg {...common}><rect x="2" y="3" width="20" height="14" rx="2" /><line x1="8" y1="21" x2="16" y2="21" /><line x1="12" y1="17" x2="12" y2="21" /></svg>;
 }
@@ -391,6 +393,7 @@ export const SETTINGS_SECTION_ITEMS: { id: SettingsSection; labelKey: string; re
   { id: "agents", labelKey: "common.agents", requiresProject: true },
   { id: "plugins", labelKey: "common.plugins", requiresProject: true },
   { id: "mcp", labelKey: "settings.mcp", requiresProject: false },
+  { id: "tools", labelKey: "settings.toolPolicy", requiresProject: false },
 ];
 
 export function SettingsPanel({
@@ -520,6 +523,7 @@ export function SettingsPanel({
           {cwd && sectionHost("plugins", <PluginsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} trust={projectTrust} onClose={onClose} onReloaded={onSessionReloaded} />)}
           {/* No project needed: the global mcp.json is listed alone, and a project adds its group. */}
           {sectionHost("mcp", <McpConfig embedded key={cwd ?? ""} cwd={cwd} trust={projectTrust} onTrustProject={onOpenTrustDialog} onProjectTrustChanged={onProjectTrustChanged} onClose={onClose} />)}
+          {sectionHost("tools", <ToolPolicySettings onClose={onClose} />)}
         </main>
       </div>
     </div>

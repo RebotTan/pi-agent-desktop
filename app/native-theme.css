@@ -9398,3 +9398,281 @@ html.dark .msg-rail-track {
     font-size: 8.5px;
   }
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   0013 · 工具审批 UI（approval prompt + rule editor）
+
+   审批卡贴在 composer 上方：`ask` 规则命中时 agent 阻塞在挂起的 Promise 上，
+   这张卡就是那个等待唯一出口。色只用 token，线条交给 --border，卡片靠
+   --surface-elevated 抬起，与 .app-menu 同一套表面规则。
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.approval-prompts {
+  display: flex;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+.approval-card {
+  width: 100%;
+  max-width: var(--chat-content-max-width, 820px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-elevated);
+  box-shadow: var(--shadow-popover);
+}
+
+.approval-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.approval-card-title {
+  font-size: var(--fs-small);
+  font-weight: 560;
+  color: var(--text);
+  flex-shrink: 0;
+}
+
+.approval-card-tool {
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+  border-radius: var(--radius-sm);
+  padding: 1px 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.approval-card-more {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: var(--fs-caption);
+  color: var(--text-dim);
+}
+
+.approval-card-args {
+  margin: 0;
+  padding: 7px 9px;
+  max-height: 190px;
+  overflow: auto;
+  border-radius: var(--radius-md);
+  background: var(--bg-inset, var(--bg));
+  font-family: var(--font-mono);
+  font-size: var(--fs-caption);
+  line-height: 1.5;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.approval-card-error {
+  font-size: var(--fs-caption);
+  color: var(--danger);
+}
+
+.approval-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.approval-card-button {
+  appearance: none;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-small);
+  padding: 4px 12px;
+  cursor: pointer;
+}
+
+.approval-card-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.approval-card-button.is-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.approval-card-button.is-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.approval-card-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── 规则编辑器（Settings › 工具审批）──────────────────────────────────── */
+
+.tool-policy-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.tool-policy-hint,
+.tool-policy-empty {
+  margin: 0;
+  font-size: var(--fs-small);
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.tool-policy-empty {
+  padding: 14px 0;
+  color: var(--text-dim);
+}
+
+.tool-policy-add {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tool-policy-input {
+  flex: 1 1 220px;
+  min-width: 0;
+  height: var(--control-height-sm);
+  padding: 0 9px;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+}
+
+.tool-policy-input:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--focus-ring);
+  border-color: transparent;
+}
+
+.tool-policy-button {
+  appearance: none;
+  height: var(--control-height-sm);
+  padding: 0 12px;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: var(--fs-small);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.tool-policy-button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.tool-policy-button.is-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-contrast);
+}
+
+.tool-policy-button.is-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+.tool-policy-button.is-quiet {
+  border-color: transparent;
+  color: var(--text-dim);
+  height: auto;
+  padding: 2px 6px;
+}
+
+.tool-policy-button.is-quiet:hover:not(:disabled) {
+  color: var(--danger);
+}
+
+.tool-policy-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.tool-policy-error {
+  font-size: var(--fs-small);
+  color: var(--danger);
+}
+
+.tool-policy-rules {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.tool-policy-rule {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding: 7px 9px;
+  background: var(--bg-subtle);
+}
+
+.tool-policy-rule:hover {
+  background: var(--bg-hover);
+}
+
+.tool-policy-rule-pattern {
+  font-family: var(--font-mono);
+  font-size: var(--fs-small);
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.tool-policy-rule-action {
+  flex-shrink: 0;
+  font-size: var(--fs-caption);
+  padding: 1px 6px;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  background: var(--bg-subtle);
+}
+
+.tool-policy-rule-action.is-ask { color: var(--warning); }
+.tool-policy-rule-action.is-deny { color: var(--danger); }
+.tool-policy-rule-action.is-allow { color: var(--success); }
+
+.tool-policy-rule-note {
+  font-size: var(--fs-caption);
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.tool-policy-rule .tool-policy-button.is-quiet {
+  margin-left: auto;
+}
