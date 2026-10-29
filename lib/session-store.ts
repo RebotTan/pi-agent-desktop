@@ -21,6 +21,7 @@ import {
   listSessionSummaries,
   resolveSessionPath,
 } from "./session-reader";
+import { getSqliteSessionStore } from "./session-store-sqlite";
 import type { SessionEntry, SessionInfo } from "./types";
 
 /**
@@ -73,7 +74,20 @@ let cachedStore: SessionStore | undefined;
 /** 单例。实例常驻 globalThis.__piSessionStore，跨模块热重载存活。 */
 export function getSessionStore(): SessionStore {
   if (!cachedStore) {
+    // PI_SESSION_STORE=sqlite 切 SQLite 列表镜像实现（零风险默认仍 FileSystem）。
+    const backend = process.env.PI_SESSION_STORE;
+    if (backend === "sqlite") {
+      const store: SessionStore = getSqliteSessionStore();
+      cachedStore = globalThis.__piSessionStore = store;
+      return store;
+    }
     cachedStore = globalThis.__piSessionStore ??= new FileSystemSessionStore();
   }
   return cachedStore;
+}
+
+/** 测试用：丢掉单例（连同 globalThis 上的那份），下次 get 重新读 env。 */
+export function resetSessionStore(): void {
+  cachedStore = undefined;
+  globalThis.__piSessionStore = undefined;
 }
