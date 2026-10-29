@@ -28,8 +28,8 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { SessionInfo } from "./types";
-import type { SessionStore } from "./session-store";
-import { FileSystemSessionStore } from "./session-store";
+import type { SessionStore } from "./session-store-fs";
+import { FileSystemSessionStore } from "./session-store-fs";
 import { buildSessionRelation } from "./session-reader";
 import { sessionPathKey } from "./session-path";
 import { resolveProject } from "./worktree";
@@ -142,14 +142,15 @@ async function scanSessionFileInfo(filePath: string): Promise<{
   }
 }
 
-export class SqliteSessionStore implements SessionStore {
+export class SqliteSessionStore extends FileSystemSessionStore {
   private db: DatabaseSync | null = null;
   private schemaReady = false;
   /** 串行化 sync：并发请求排队，不重复 readdir + stat。 */
   private syncChain: Promise<void> = Promise.resolve();
-  private readonly fallback = new FileSystemSessionStore();
 
-  constructor(private readonly dbPath: string = join(getAgentDir(), DB_FILE_NAME)) {}
+  constructor(private readonly dbPath: string = join(getAgentDir(), DB_FILE_NAME)) {
+    super();
+  }
 
   /** 测试与关闭用：关闭连接，让 Windows 释放文件句柄。 */
   close(): void {
@@ -373,20 +374,20 @@ export class SqliteSessionStore implements SessionStore {
   }
 
   async listSessions(options?: { force?: boolean; allowStale?: boolean }): Promise<SessionInfo[]> {
-    if (options?.force) this.fallback.invalidateListCache();
+    if (options?.force) super.invalidateListCache();
 
     // allowStale 的语义是「允许旧数据、但要便宜读」：直接发库里的行，
     // 不跑 readdir + stat。库还没写开时（首次访问）才回退到全量 sync。
     if (options?.allowStale) {
       const rows = this.readRows();
-      if (rows.length === 0) return this.fallback.listSessions(options);
+      if (rows.length === 0) return super.listSessions(options);
       return this.attachProjectInfo(this.mapRows(rows));
     }
 
     const synced = await this.sync();
-    if (!synced) return this.fallback.listSessions(options);
+    if (!synced) return super.listSessions(options);
     const rows = this.readRows();
-    if (rows.length === 0) return this.fallback.listSessions(options);
+    if (rows.length === 0) return super.listSessions(options);
     return this.attachProjectInfo(this.mapRows(rows));
   }
 
@@ -410,17 +411,9 @@ export class SqliteSessionStore implements SessionStore {
     return this.listSessions();
   }
 
-  async resolveSessionRef(sessionId: string): Promise<string | null> {
-    return this.fallback.resolveSessionRef(sessionId);
-  }
-
-  getSessionEntries(ref: string) {
-    return this.fallback.getSessionEntries(ref);
-  }
-
-  invalidateListCache(): void {
-    this.fallback.invalidateListCache();
-  }
+  // resolveSessionRef / getSessionEntries / invalidateListCache 直接继承
+  // FileSystemSessionStore：这三条本就没有 SQLite 版本，写三层纯转发
+  // 只会多一层要同步维护的中间人。
 }
 
 declare global {

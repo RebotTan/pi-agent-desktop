@@ -86,7 +86,6 @@ export function buildMatchExpression(query: string): string | null {
 
 interface FileRow {
   path: string;
-  session_id: string;
   size: number;
   mtime_ms: number;
 }
@@ -117,7 +116,6 @@ export class SessionSearchIndex {
       db.exec(`
         CREATE TABLE IF NOT EXISTS files (
           path TEXT PRIMARY KEY,
-          session_id TEXT NOT NULL,
           size INTEGER NOT NULL,
           mtime_ms REAL NOT NULL
         );
@@ -131,6 +129,7 @@ export class SessionSearchIndex {
         CREATE INDEX IF NOT EXISTS docs_path ON docs(path);
         CREATE VIRTUAL TABLE IF NOT EXISTS docs_fts USING fts5(tok, tokenize='unicode61');
       `);
+      this.migrateLegacyFilesTable(db);
       this.db = db;
       this.schemaReady = true;
       return db;
@@ -138,6 +137,28 @@ export class SessionSearchIndex {
       this.db = null;
       this.schemaReady = false;
       return null;
+    }
+  }
+
+  /**
+   * 老库的 files 表带一个从未被读过的 session_id 列（会话 id 从 docs.path
+   * 关联查出即可，存在这里只是冗余）。重建表去掉它：
+   * DROP COLUMN 要 SQLite 3.35+，重建表在任何版本都能跑，且 size/mtime
+   * 全保留，不需要重新解析任何 .jsonl。
+   */
+  private migrateLegacyFilesTable(db: DatabaseSync): void {
+    try {
+      const columns = db.prepare("PRAGMA table_info(files)").all() as Array<{ name: string }>;
+      if (!columns.some((column) => column.name === "session_id")) return;
+      db.exec(`
+        CREATE TABLE files_migrated (path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime_ms REAL NOT NULL);
+        INSERT OR REPLACE INTO files_migrated(path, size, mtime_ms) SELECT path, size, mtime_ms FROM files;
+        DROP TABLE files;
+        ALTER TABLE files_migrated RENAME TO files;
+      `);
+    } catch {
+      // 迁移失败不致命：索引本身是缓存，它已经在 open() 的 try 里，
+      // 这里再失败就让旧表继续工作（新代码不再写 session_id）。
     }
   }
 
@@ -164,7 +185,7 @@ export class SessionSearchIndex {
     if (!db) return;
 
     const known = new Map<string, FileRow>();
-    for (const row of db.prepare("SELECT path, session_id, size, mtime_ms FROM files").all() as unknown as FileRow[]) {
+    for (const row of db.prepare("SELECT path, size, mtime_ms FROM files").all() as unknown as FileRow[]) {
       known.set(row.path, row);
     }
 
@@ -200,8 +221,9 @@ export class SessionSearchIndex {
   }
 
   private deleteFile(db: DatabaseSync, path: string): void {
+    const deleteFts = db.prepare("DELETE FROM docs_fts WHERE rowid = ?");
     for (const row of db.prepare("SELECT rowid FROM docs WHERE path = ?").all(path) as { rowid: number }[]) {
-      db.prepare("DELETE FROM docs_fts WHERE rowid = ?").run(row.rowid);
+      deleteFts.run(row.rowid);
     }
     db.prepare("DELETE FROM docs WHERE path = ?").run(path);
     db.prepare("DELETE FROM files WHERE path = ?").run(path);
@@ -251,8 +273,8 @@ export class SessionSearchIndex {
       return;
     }
     db.prepare(
-      "INSERT OR REPLACE INTO files(path, session_id, size, mtime_ms) VALUES (?, ?, ?, ?)",
-    ).run(session.path, session.id, stats.size, stats.mtimeMs);
+      "INSERT OR REPLACE INTO files(path, size, mtime_ms) VALUES (?, ?, ?)",
+    ).run(session.path, stats.size, stats.mtimeMs);
   }
 
   /**
