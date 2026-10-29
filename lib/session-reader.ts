@@ -219,12 +219,44 @@ function resolveScannedSessionRelation(
   }
 }
 
-function mapScannedSession(
+/**
+ * 会话关系字段（fork / subagent）的唯一构造点。
+ *
+ * 所有 SessionStore 实现都必须走这里，否则「parentSessionId 是 id 还是路径」
+ * 和「有没有 relation」会各说各话 —— 侧边栏的 fork 树正是靠这两个字段。
+ */
+export function buildSessionRelation(
+  scanned: Pick<ScannedSessionInfo, "path" | "id" | "parentSessionPath">,
+  pathToId: Map<string, string>,
+): Pick<SessionInfo, "parentSessionId" | "relation"> {
+  const { originSessionId, subagent } = resolveScannedSessionRelation(scanned as ScannedSessionInfo, pathToId);
+  if (subagent) {
+    return {
+      ...(originSessionId ? { parentSessionId: originSessionId } : {}),
+      relation: {
+        kind: "subagent",
+        parentSessionId: subagent.parentSessionId,
+        profile: subagent.profile,
+        description: subagent.description,
+        status: subagent.status,
+      },
+    };
+  }
+  if (scanned.parentSessionPath) {
+    return {
+      ...(originSessionId ? { parentSessionId: originSessionId } : {}),
+      relation: { kind: "fork", ...(originSessionId ? { originSessionId } : {}) },
+    };
+  }
+  return { ...(originSessionId ? { parentSessionId: originSessionId } : {}) };
+}
+
+export function mapScannedSession(
   scanned: ScannedSessionInfo,
   pathToId: Map<string, string>,
 ): SessionInfo {
   cacheSessionPath(scanned.id, scanned.path);
-  const { originSessionId, subagent } = resolveScannedSessionRelation(scanned, pathToId);
+  const relation = buildSessionRelation(scanned, pathToId);
   const detailsPending = scanned.detailsPending === true;
   return {
     path: scanned.path,
@@ -240,12 +272,7 @@ function mapScannedSession(
     firstMessage: detailsPending && !scanned.firstMessage
       ? ""
       : scanned.firstMessage || "(no messages)",
-    parentSessionId: originSessionId,
-    ...(subagent
-      ? { relation: { kind: "subagent" as const, parentSessionId: subagent.parentSessionId, profile: subagent.profile, description: subagent.description, status: subagent.status } }
-      : scanned.parentSessionPath
-        ? { relation: { kind: "fork" as const, ...(originSessionId ? { originSessionId } : {}) } }
-        : {}),
+    ...relation,
     transient: false,
     ...(detailsPending ? { detailsPending: true } : {}),
   };

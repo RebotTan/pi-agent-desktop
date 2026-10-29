@@ -27,6 +27,8 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import type { SessionInfo } from "./types";
 import type { SessionStore } from "./session-store";
 import { FileSystemSessionStore } from "./session-store";
+import { buildSessionRelation } from "./session-reader";
+import { sessionPathKey } from "./session-path";
 import { resolveProject } from "./worktree";
 import { projectIdentityKey } from "./project-identity";
 import { isChatWorkspacePath, isChatFolderPath } from "./chat-workspace";
@@ -310,7 +312,7 @@ export class SqliteSessionStore implements SessionStore {
     });
   }
 
-  private toSessionInfo(row: SessionRow): SessionInfo {
+  private toSessionInfo(row: SessionRow, pathToId: Map<string, string>): SessionInfo {
     return {
       path: row.path,
       id: row.id,
@@ -320,7 +322,12 @@ export class SqliteSessionStore implements SessionStore {
       modified: row.modified,
       messageCount: row.messageCount,
       firstMessage: row.firstMessage,
-      parentSessionId: row.parentSessionPath ?? undefined,
+      // fork / subagent 关系必须走与文件系统实现同一个构造点，否则
+      // parentSessionId 会是路径而不是 id，侧边栏的 fork 树会塔平。
+      ...buildSessionRelation(
+        { path: row.path, id: row.id, parentSessionPath: row.parentSessionPath ?? undefined },
+        pathToId,
+      ),
       transient: false,
     };
   }
@@ -332,7 +339,9 @@ export class SqliteSessionStore implements SessionStore {
 
     const db = this.open()!;
     const rows = db.prepare("SELECT * FROM sessions ORDER BY modified DESC").all() as unknown as SessionRow[];
-    return this.attachProjectInfo(rows.map((row) => this.toSessionInfo(row)));
+    const pathToId = new Map<string, string>();
+    for (const row of rows) pathToId.set(sessionPathKey(row.path), row.id);
+    return this.attachProjectInfo(rows.map((row) => this.toSessionInfo(row, pathToId)));
   }
 
   async listSummaries(): Promise<SessionInfo[]> {

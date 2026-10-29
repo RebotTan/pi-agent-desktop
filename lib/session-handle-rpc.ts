@@ -38,6 +38,8 @@ export class RpcSessionHandle implements SessionHandle {
   }>();
   private alive = true;
   private running = false;
+  private destroyEmitted = false;
+  private realSessionId: string | null = null;
   private readonly policy: Required<Omit<RpcSessionHandleOptions, "sessionId" | "cwd">>;
 
   constructor(worker: WorkerProcess, options: RpcSessionHandleOptions) {
@@ -64,8 +66,17 @@ export class RpcSessionHandle implements SessionHandle {
     return this.running;
   }
 
+  /** 当前会话在 worker 里的真实 id（start 之前等于本地 id）。 */
+  getRealSessionId(): string {
+    return this.realSessionId ?? this.sessionId;
+  }
+
   async send(command: Record<string, unknown>): Promise<unknown> {
-    if (!this.isAlive()) throw new Error("Session is not alive");
+    return this.request("send", command);
+  }
+
+  private request(method: string, params?: unknown): Promise<unknown> {
+    if (!this.isAlive()) return Promise.reject(new Error("Session is not alive"));
     const id = nextRequestId++;
     return new Promise((resolve, reject) => {
       this.pendingRequests.set(id, { resolve, reject });
@@ -73,8 +84,8 @@ export class RpcSessionHandle implements SessionHandle {
         type: "request",
         id,
         sessionId: this.sessionId,
-        method: "send",
-        params: command,
+        method,
+        params,
       });
     });
   }
@@ -89,19 +100,40 @@ export class RpcSessionHandle implements SessionHandle {
   }
 
   start(): void {
-    void this.send({ type: "start" }).catch((error) => {
-      console.error(`[sidecar] start failed for ${this.sessionId}:`, error);
-    });
+    void this.request("session.start", {
+      cwd: this.cwd,
+      chatOnly: this.policy.chatOnly,
+      chatWorkspace: this.policy.chatWorkspace,
+      chatUnlocked: this.policy.chatUnlocked,
+    })
+      .then((result) => {
+        const realSessionId = (result as { realSessionId?: unknown } | undefined)?.realSessionId;
+        if (typeof realSessionId === "string" && realSessionId) this.realSessionId = realSessionId;
+      })
+      .catch((error) => {
+        console.error(`[sidecar] start failed for ${this.sessionId}:`, error);
+      });
   }
 
   async shutdown(): Promise<void> {
-    await this.send({ type: "shutdown" });
+    await this.request("shutdown");
   }
 
   destroy(): void {
-    if (!this.alive) return;
+    if (this.destroyEmitted) return;
+    // 必须在 alive 置 false 之前发：request() 的活体守卫会把关闭后的调用拦住。
+    // 且不能走 pendingRequests —— 下面要立刻把挂起的请求全部 reject。
+    if (this.alive && this.worker.isAlive()) {
+      this.worker.send({
+        type: "request",
+        id: nextRequestId++,
+        sessionId: this.sessionId,
+        method: "destroy",
+        params: { type: "destroy" },
+      });
+    }
     this.alive = false;
-    void this.send({ type: "destroy" }).catch(() => {});
+    this.failPending(new Error("Session destroyed"));
     this.emitDestroy();
   }
 
@@ -117,7 +149,7 @@ export class RpcSessionHandle implements SessionHandle {
   }
 
   async waitUntilReady(): Promise<void> {
-    await this.send({ type: "wait_until_ready" });
+    await this.request("wait_until_ready");
   }
 
   beginExtensionBinding(): void {
@@ -174,13 +206,18 @@ export class RpcSessionHandle implements SessionHandle {
 
   private handleWorkerExit(): void {
     this.alive = false;
-    const error = new Error("Worker process exited");
-    for (const pending of this.pendingRequests.values()) pending.reject(error);
-    this.pendingRequests.clear();
+    this.failPending(new Error("Worker process exited"));
     this.emitDestroy();
   }
 
+  private failPending(error: Error): void {
+    for (const pending of this.pendingRequests.values()) pending.reject(error);
+    this.pendingRequests.clear();
+  }
+
   private emitDestroy(): void {
+    if (this.destroyEmitted) return;
+    this.destroyEmitted = true;
     for (const cb of this.destroyCallbacks) cb();
   }
 }

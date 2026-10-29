@@ -2522,6 +2522,8 @@ export function subscribeRunningSessions(listener: (ids: string[]) => void): () 
 }
 
 let lastRunningSnapshot = "";
+/** 事件总线的去重游标：与 lastRunningSnapshot 分开，两个消费面互不影响。 */
+let lastBusSnapshot = "";
 
 /**
  * Recompute the running-session-id set and, if it changed since the last
@@ -2529,24 +2531,28 @@ let lastRunningSnapshot = "";
  */
 export function notifyRunningChange(): void {
   const listeners = getRunningListeners();
-  if (listeners.size === 0) {
-    // A future subscriber receives its own initial snapshot. Clear this one so
-    // its first state transition cannot match stale state from an old listener.
-    lastRunningSnapshot = "";
-    // The event bus is independent of the running listener set: emit even when
-    // no running listener is subscribed, so the global event stream stays live.
-    getAgentEventBus().emit({ type: "running_changed", ids: [...getRunningRpcSessionIds()] });
-    return;
-  }
   const ids = getRunningRpcSessionIds();
   // List changes (including an unpersisted prompt appearing/disappearing)
   // must reach every window even when the running id set stays unchanged.
   const snapshot = JSON.stringify({ ids: [...ids].sort(), version: getSessionListVersion() });
-  if (snapshot === lastRunningSnapshot) return;
-  lastRunningSnapshot = snapshot;
-  for (const listener of listeners) {
-    try { listener(ids); } catch { /* ignore listener errors */ }
+
+  if (listeners.size === 0) {
+    // A future subscriber receives its own initial snapshot. Clear this one so
+    // its first state transition cannot match stale state from an old listener.
+    lastRunningSnapshot = "";
+  } else {
+    if (snapshot === lastRunningSnapshot) return;
+    lastRunningSnapshot = snapshot;
+    for (const listener of listeners) {
+      try { listener(ids); } catch { /* ignore listener errors */ }
+    }
   }
+
+  // The event bus is independent of the running listener set: emit even when
+  // no running listener is subscribed, so the global event stream stays live.
+  // 去重靠快照本身 —— 每个窗口都靠这条事件刷新运行态，不能静默丢掉。
+  if (snapshot === lastBusSnapshot) return;
+  lastBusSnapshot = snapshot;
   getAgentEventBus().emit({ type: "running_changed", ids: [...ids] });
 }
 

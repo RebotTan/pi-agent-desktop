@@ -46,30 +46,27 @@ class WorkerProcessImpl implements WorkerProcess {
   private readyPromise: Promise<void>;
   private alive = true;
 
-  constructor(proc: ChildProcess, private readonly options: WorkerSpawnOptions) {
+  constructor(proc: ChildProcess) {
     this.proc = proc;
     this.pid = proc.pid ?? -1;
 
+    // 只用一个 readline 消费 stdout：」ready」检测与普通消息分发共用同一行缓冲。
+    // 曾经额外挂 proc.stdout.on("data") 做 ready 检测，粘包时会漏掉 ready 消息。
+    let settleReady: (() => void) | null = null;
+    let rejectReady: ((error: Error) => void) | null = null;
     this.readyPromise = new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("Worker ready timeout")), 30_000);
-      const onMessage = (line: string) => {
-        try {
-          const message = JSON.parse(line);
-          if (message.type === "ready") {
-            clearTimeout(timer);
-            resolve();
-          }
-        } catch {}
-      };
-      proc.stdout?.on("data", (chunk) => {
-        for (const line of chunk.toString().split("\n")) {
-          if (line.trim()) onMessage(line);
-        }
-      });
+      settleReady = resolve;
+      rejectReady = reject;
     });
+    const readyTimer = setTimeout(() => {
+      rejectReady?.(new Error("Worker ready timeout"));
+      proc.kill();
+    }, 30_000);
 
     proc.on("exit", () => {
       this.alive = false;
+      clearTimeout(readyTimer);
+      rejectReady?.(new Error("Worker exited before ready"));
       for (const handler of this.exitHandlers) handler();
     });
 
@@ -78,6 +75,11 @@ class WorkerProcessImpl implements WorkerProcess {
     rl.on("line", (line) => {
       try {
         const message = JSON.parse(line);
+        if (message.type === "ready") {
+          clearTimeout(readyTimer);
+          settleReady?.();
+          return;
+        }
         if (message.sessionId) {
           const handlers = this.messageHandlers.get(message.sessionId);
           if (handlers) for (const handler of handlers) handler(message);
@@ -98,7 +100,6 @@ class WorkerProcessImpl implements WorkerProcess {
     if (!this.isAlive()) return;
     this.proc.stdin?.write(JSON.stringify(message) + "\n");
   }
-
   onMessage(sessionId: string, handler: (message: Record<string, unknown>) => void): void {
     let handlers = this.messageHandlers.get(sessionId);
     if (!handlers) {
@@ -113,22 +114,16 @@ class WorkerProcessImpl implements WorkerProcess {
   }
 
   kill(): void {
+    this.alive = false;
     this.proc.kill();
-  }
-
-  fingerprint(): string {
-    return JSON.stringify({
-      cwd: this.options.cwd,
-      extensionRoots: this.options.extensionRoots ?? [],
-      model: this.options.model ?? "",
-      toolNames: this.options.toolNames ?? [],
-    });
   }
 }
 
 export class WorkerProcessHost {
   private prewarmed: { worker: WorkerProcessImpl; fingerprint: string; spawnedAt: number } | null = null;
-  private prewarming = false;
+  private prewarming: Promise<void> | null = null;
+  /** 每次丢弃预热池就自增；在飞的预热拿旧代号回来会自己作废并杀进程。 */
+  private generation = 0;
 
   async spawnWorker(options: WorkerSpawnOptions): Promise<WorkerProcess> {
     const fingerprint = JSON.stringify(options);
@@ -163,35 +158,50 @@ export class WorkerProcessHost {
         PI_WORKER_MODE: "1",
       },
     });
-    return new WorkerProcessImpl(proc, options);
+    return new WorkerProcessImpl(proc);
   }
 
   private async prewarm(options: WorkerSpawnOptions): Promise<void> {
     if (this.prewarmed || this.prewarming) return;
-    this.prewarming = true;
+    const generation = this.generation;
+    const task = this.runPrewarm(options, generation);
+    this.prewarming = task;
     try {
-      const worker = await this.spawnFresh(options);
+      await task;
+    } finally {
+      if (this.prewarming === task) this.prewarming = null;
+    }
+  }
+
+  private async runPrewarm(options: WorkerSpawnOptions, generation: number): Promise<void> {
+    let worker: WorkerProcessImpl | null = null;
+    try {
+      worker = await this.spawnFresh(options);
       await worker.waitReady();
+      // 预热期间被 discardPrewarmed() 作废：杀掉自己，不往池里写。
+      if (generation !== this.generation) {
+        worker.kill();
+        return;
+      }
       this.prewarmed = { worker, fingerprint: JSON.stringify(options), spawnedAt: Date.now() };
     } catch {
-      // 预热失败不阻塞主流程
-    } finally {
-      this.prewarming = false;
+      // 预热失败不阻塞主流程，但已经 spawn 出来的子进程必须杀掉，否则泄漏。
+      worker?.kill();
     }
   }
 
   /** 测试与关闭用：杀掉预热池里的 worker，让进程能退出。 */
   discardPrewarmed(): void {
+    this.generation += 1;
     if (this.prewarmed) {
       this.prewarmed.worker.kill();
       this.prewarmed = null;
     }
-    this.prewarming = false;
   }
 
   /** 测试与关闭用：等异步预热结束（如果有），让进程能退出。 */
   async settlePrewarm(): Promise<void> {
-    while (this.prewarming) await new Promise((r) => setTimeout(r, 10));
+    while (this.prewarming) await this.prewarming;
     this.discardPrewarmed();
   }
 }
