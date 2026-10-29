@@ -1,5 +1,13 @@
 # @agegr/pi-web
 
+## 0.10.8
+
+### Patch Changes
+
+- [`d0e5a3d`](https://github.com/RebotTan/pi-agent-desktop/commit/d0e5a3dcdc652f35c574b575cdf5ac331bbda182) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Mirror `compactionCount` in the SQLite session store (with an in-place schema migration that rebuilds the cache) and make `resetSessionStore()` close the store it held so the SQLite connection is released instead of leaking on every hot reload.
+
+- [`dc2bed9`](https://github.com/RebotTan/pi-agent-desktop/commit/dc2bed9775aa5914fe960b132b7869f0848a6488) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Drop the unused `files.session_id` column from the search index (migrating an existing cache in place), prepare the FTS delete statement once per file, and let `SqliteSessionStore` inherit the three read methods it only ever forwarded to the filesystem store.
+
 ## 0.10.7
 
 ### Patch Changes
