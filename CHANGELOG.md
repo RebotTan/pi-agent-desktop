@@ -1,5 +1,23 @@
 # @agegr/pi-web
 
+## 0.10.7
+
+### Patch Changes
+
+- [`6522c8c`](https://github.com/RebotTan/pi-agent-desktop/commit/6522c8cf345b94e893ab28ead0b66ca3ffde994e) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Index session search in SQLite FTS5 so the whole history is searchable (the streaming scan stops at 500 files) and Chinese two-character words match.
+
+- [`1ef4b69`](https://github.com/RebotTan/pi-agent-desktop/commit/1ef4b6912d9e398c3abb2962d5bd4d0aa8500e29) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Add SidecarEngine as a second AgentEngine implementation that delegates to the in-process engine by default, proving the interface can carry a second implementation before any cross-process isolation work starts.
+
+- [`a1cec28`](https://github.com/RebotTan/pi-agent-desktop/commit/a1cec2836b4115f5c1395ed034d85f21b8400ae4) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Add SessionHandle interface and cross-process worker scaffolding (RpcSessionHandle, WorkerProcessHost, worker entry) so SidecarEngine can later spawn real worker processes; the skeleton already proves the AgentEngine interface carries a second implementation.
+
+- [`7535177`](https://github.com/RebotTan/pi-agent-desktop/commit/75351776ef902e637434e8f6cddeaa20c622d490) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Add SqliteSessionStore as an opt-in SessionStore implementation (PI_SESSION_STORE=sqlite) that mirrors session list metadata into SQLite, so listing skips re-parsing changed JSONL headers and with `allowStale` skips the directory scan entirely; project info is cached with a 5-minute TTL.
+
+- [`747eeba`](https://github.com/RebotTan/pi-agent-desktop/commit/747eeba15e098ba61f29b538e7cc7c724252a109) Thanks [@tanjianwd](https://github.com/tanjianwd)! - 修复代码审查发现的四个真实缺陷：SQLite 存储解析 fork 关系、sidecar 句柄把 destroy/响应送达 worker、预热池失败时杀进程、running_changed 在事件总线上独立去重。
+
+- [`68626b9`](https://github.com/RebotTan/pi-agent-desktop/commit/68626b924ba2c4f5fa6dc6eb9ed346ab9bbc42d9) Thanks [@tanjianwd](https://github.com/tanjianwd)! - 修复代码审查第 5–11 条：会话销毁时取消挂起的工具审批、SSE 流实现 cancel()、插件贡献路由强制动态、SQLite 同步串行化且不再把读失败当删除、索引候选集按会话新旧截断、`allowStale` 真正跳过目录扫描。
+
+- [`161a30f`](https://github.com/RebotTan/pi-agent-desktop/commit/161a30fb90e548b0aa6d750ef3578db4a81bd434) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Align the root package.json version with the released 0.10.6 so the next changesets run produces 0.10.7 instead of colliding with the existing v0.10.6 tag.
+
 ## 0.10.5
 
 ### Patch Changes
