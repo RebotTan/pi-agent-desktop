@@ -18,6 +18,8 @@
 
 - [`161a30f`](https://github.com/RebotTan/pi-agent-desktop/commit/161a30fb90e548b0aa6d750ef3578db4a81bd434) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Align the root package.json version with the released 0.10.6 so the next changesets run produces 0.10.7 instead of colliding with the existing v0.10.6 tag.
 
+- [`d0e5a3d`](https://github.com/RebotTan/pi-agent-desktop/commit/d0e5a3d) Thanks [@tanjianwd](https://github.com/tanjianwd)! - 镜像 `compactionCount` 到 SQLite 会话存储（老库就地补列并重建缓存），并让 `resetSessionStore()` 关闭持有的连接而不是只丢引用。
+
 ## 0.10.5
 
 ### Patch Changes

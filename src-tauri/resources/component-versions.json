@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "appVersion": "0.10.6",
+  "appVersion": "0.10.7",
   "components": [
     {
       "id": "pid",
       "repository": "RebotTan/pi-agent-desktop",
-      "version": "0.10.6"
+      "version": "0.10.7"
     },
     {
       "id": "pi",
@@ -15,7 +15,7 @@
     {
       "id": "pi-web",
       "repository": "agegr/pi-web",
-      "version": "0.10.5"
+      "version": "0.10.7"
     }
   ]
 }
