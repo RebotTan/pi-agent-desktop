@@ -164,13 +164,22 @@ PR-1/PR-2 把会话运行时状态收进 `AgentEngine` 接口。骨架版 `Sidec
 
 ---
 
-## 二、待做（第三轮及以后）
+### 13. SessionStore SQLite 列表镜像（可选）
 
-按投入产出排序。每项标注：依赖的 seam、解锁的能力、预估投入、优先级。
+| 项 | 值 |
+|---|---|
+| ticket | `.scratch/tickets/0015-session-store-sqlite.md` |
+| seam | `PI_SESSION_STORE=sqlite` 环境变量切 `getSessionStore()` 实现 |
+| 文件 | `lib/session-store-sqlite.ts`（新增）、`lib/session-store.ts` |
+| 解锁 | 大规模历史列表、用量统计查询 |
 
-### 高优先级（直接影响可用性）
+`SqliteSessionStore` 实现 `SessionStore` 接口：会话列表元数据（id/cwd/created/modified/messageCount/firstMessage/parent）镜像到 SQLite，`attachSessionProjectInfo` 的 git 结果缓存进 `project_info` 表（TTL 5min）。每次列表先增量 sync（size+mtime 指纹），再 SELECT 读 SQLite。
 
-#### 13. 插件 UI contribution 落地（第一个真实插件）
+写路径仍走 SDK（不同步）；`PI_SESSION_STORE=sqlite` 启用，缺省仍 `FileSystemSessionStore`（零风险默认）。实测 53 会话时 warm FS 14-18ms vs warm SQLite 47-50ms（SQLite 因 sync 开销略慢；优势在数百会话时 FS 枚举占主导）。
+
+---
+
+#### 14. 插件 UI contribution 落地（第一个真实插件）
 
 | 项 | 值 |
 |---|---|
@@ -183,7 +192,7 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 
 ### 中优先级（架构演进）
 
-#### 14. SidecarEngine（多 Agent 并行隔离）
+#### 15. SidecarEngine（多 Agent 并行隔离）
 
 | 项 | 值 |
 |---|---|
@@ -193,19 +202,6 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 | 优先级 | ★★☆ |
 
 **接口与骨架已交付（见已交付 #12）**，这一项剩下的是真跨进程隔离：每 worker 一个 `pi --mode rpc` 子进程（参考 PiDeck/PI-Desktop 思想，不抄代码避 LGPL），`SidecarEngine` 内部把「委托目标引擎」换成「spawn 子进程 + stdio JSON-RPC」。
-
-#### 15. SessionStore SQLite 列表镜像
-
-| 项 | 值 |
-|---|---|
-| seam | `SessionStore` 接口（PR-3） |
-| 解锁 | 大规模历史列表、用量统计查询 |
-| 投入 | 3–5 天 |
-| 优先级 | ★☆☆ |
-
-**搜索索引已交付（见已交付 #11）**，这一项剩下的是列表读路径的镜像：新增 `SqliteSessionStore` 实现 `SessionStore` 接口，JSONL 写入时同步镜像到 SQLite（写路径仍走 SDK，SQLite 只做读索引），`getSessionStore()` 按配置切实现。
-
-降级理由：列表已经有 `lib/session-list-scanner.ts` 的增量 JSON 索引（`pi-web-session-index.json`，按 size+mtime 命中缓存），瓶颈只剩每个会话 `attachSessionProjectInfo` 的 git 调用；而搜索 —— 原先最痛的一刀 —— 已被 FTS5 索引解决。剩下的是「大规模历史 + 用量统计查询」，等会话数上千再说。
 
 #### 16. 外部会话导入转换器
 
@@ -235,7 +231,7 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 
 | 项 | 值 |
 |---|---|
-| seam | 事件总线（PR-5）+ SessionStore SQLite（#15） |
+| seam | 事件总线（PR-5）+ SessionStore SQLite（#16） |
 | 解锁 | 用量热力图/每日/模型/项目统计 |
 | 投入 | 2–3 天 |
 | 优先级 | ★☆☆ |
@@ -305,4 +301,4 @@ PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话�
 |---|---|
 | 0.10.1 | PR-1~PR-6（5 个 seam + 插件骨架）+ 发版基建 + releaseBody 自动化 |
 | 0.10.2 | PR-5 `session_ended` 端测（`b02ad78`）+ 平台裁剪（`6e08e34`/`a6da4bc`）+ releaseBody（`c35ae95`）+ 消息轨道（`e33c22d`）+ 审批 UI（`f5f8495`） |
-| 未定 | #13~#21 待做项，按优先级逐个 PR |
+| 未定 | #14~#22 待做项，按优先级逐个 PR |
