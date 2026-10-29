@@ -12,9 +12,12 @@
 // 「读时重建」语义一致。
 //
 // 表结构：
-//   sessions(path PK, id, cwd, created, modified, messageCount, firstMessage,
-//            parentSessionPath, sessionName, fingerprint, updatedAt)
+//   sessions(path PK, id, cwd, created, modified, messageCount, compactionCount,
+//            firstMessage, parentSessionPath, sessionName, fingerprint, updatedAt)
 //   project_info(cwd PK, projectRoot, branch, isWorktree, resolvedAt)
+//
+// 迁移：compactionCount 是 0.10.7 补的列。老库靠 ensureSchema 里的 PRAGMA
+// 检查补列，补完清空 sessions 让下一轮全量重解析（它只是镜像缓存，重建无害）。
 //
 // 单例纪律：挂 globalThis.__piSqliteSessionStore（HMR 与 __piSessionStore 同构）。
 
@@ -48,6 +51,7 @@ interface SessionRow {
   created: string;
   modified: string;
   messageCount: number;
+  compactionCount: number;
   firstMessage: string;
   parentSessionPath: string | null;
   sessionName: string | null;
@@ -74,6 +78,7 @@ async function scanSessionFileInfo(filePath: string): Promise<{
   created: Date;
   modified: Date;
   messageCount: number;
+  compactionCount?: number;
   firstMessage: string;
   parentSessionPath?: string;
   sessionName?: string;
@@ -83,6 +88,7 @@ async function scanSessionFileInfo(filePath: string): Promise<{
     let header: Record<string, unknown> | null = null;
     let sessionName: string | undefined;
     let messageCount = 0;
+    let compactionCount = 0;
     let firstMessage = "";
     let lastActivityTime: number | undefined;
 
@@ -100,6 +106,10 @@ async function scanSessionFileInfo(filePath: string): Promise<{
       }
       if (entry.type === "session_info" && typeof entry.name === "string" && entry.name.trim()) {
         sessionName = entry.name.trim();
+      }
+      if (entry.type === "compaction") {
+        compactionCount++;
+        continue;
       }
       if (entry.type !== "message") continue;
       messageCount++;
@@ -122,6 +132,7 @@ async function scanSessionFileInfo(filePath: string): Promise<{
       created: new Date(String(header.timestamp)),
       modified: new Date(lastActivityTime ?? stats.mtimeMs),
       messageCount,
+      ...(compactionCount > 0 ? { compactionCount } : {}),
       firstMessage: firstMessage || "(no messages)",
       parentSessionPath: typeof header.parentSession === "string" ? header.parentSession : undefined,
       sessionName,
@@ -168,6 +179,7 @@ export class SqliteSessionStore implements SessionStore {
           created TEXT NOT NULL,
           modified TEXT NOT NULL,
           messageCount INTEGER NOT NULL,
+          compactionCount INTEGER NOT NULL DEFAULT 0,
           firstMessage TEXT NOT NULL,
           parentSessionPath TEXT,
           sessionName TEXT,
@@ -183,6 +195,14 @@ export class SqliteSessionStore implements SessionStore {
           resolvedAt INTEGER NOT NULL
         );
       `);
+      // 老库补列：0.10.7 之前的 sessions 表没有 compactionCount。补列后清空
+      // 现有行强制全量重解析 —— 否则 fingerprint 没变，sync 会跳过老行，
+      // compactionCount 永远是 0。这张表只是 .jsonl 的镜像缓存，重建无害。
+      const columns = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
+      if (!columns.some((column) => column.name === "compactionCount")) {
+        db.exec("ALTER TABLE sessions ADD COLUMN compactionCount INTEGER NOT NULL DEFAULT 0");
+        db.exec("DELETE FROM sessions");
+      }
       this.schemaReady = true;
       return true;
     } catch {
@@ -231,8 +251,8 @@ export class SqliteSessionStore implements SessionStore {
     const selectStmt = db.prepare("SELECT fingerprint FROM sessions WHERE path = ?");
     const upsertStmt = db.prepare(`
       INSERT OR REPLACE INTO sessions
-      (path, id, cwd, created, modified, messageCount, firstMessage, parentSessionPath, sessionName, fingerprint, updatedAt)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      (path, id, cwd, created, modified, messageCount, compactionCount, firstMessage, parentSessionPath, sessionName, fingerprint, updatedAt)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const now = Date.now();
@@ -256,6 +276,7 @@ export class SqliteSessionStore implements SessionStore {
           info.created.toISOString(),
           info.modified.toISOString(),
           info.messageCount,
+          info.compactionCount ?? 0,
           info.firstMessage,
           info.parentSessionPath ?? null,
           info.sessionName ?? null,
@@ -339,6 +360,7 @@ export class SqliteSessionStore implements SessionStore {
       created: row.created,
       modified: row.modified,
       messageCount: row.messageCount,
+      ...(row.compactionCount > 0 ? { compactionCount: row.compactionCount } : {}),
       firstMessage: row.firstMessage,
       // fork / subagent 关系必须走与文件系统实现同一个构造点，否则
       // parentSessionId 会是路径而不是 id，侧边栏的 fork 树会塔平。
