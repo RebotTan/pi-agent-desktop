@@ -61,6 +61,7 @@ import type { McpHost } from "./mcp-host";
 import { mcpPromptPreparation, type McpCommandCandidate } from "./mcp-command";
 import { createReadOnlyMcpPolicyExtension } from "./mcp-read-only-policy";
 import { createApprovalPolicyExtension } from "./approval-policy-extension";
+import { getApprovalCoordinator } from "./approval-coordinator";
 import { getAgentEventBus } from "./agent-event-bus";
 import { isNestedToolExecutionEvent } from "./agent-event-wire";
 import {
@@ -2178,6 +2179,8 @@ function registerRpcWrapper(wrapper: AgentSessionWrapper): void {
   // next request registers a replacement under the same id. Finishing later,
   // the closing wrapper must not unregister that replacement.
   wrapper.onDestroy(() => {
+    // 会话死了，它挂着的审批永远等不到人点 —— 不清掉就是 agent 侧永久阻塞 + 内存泄漏。
+    getApprovalCoordinator().cancel({ sessionId }, "session_destroyed");
     if (registry.get(sessionId) !== wrapper) return;
     registry.delete(sessionId);
     // A destroyed wrapper leaves the running set (idle shutdown, branch
@@ -2755,7 +2758,7 @@ export async function startRpcSession(
               ...(builtins?.extensions ?? []),
               ...getPluginRegistry().getAgentExtensions(),
               createReadOnlyMcpPolicyExtension(),
-              createApprovalPolicyExtension(),
+              createApprovalPolicyExtension({ sessionId }),
               createArtifactGuideExtension(),
               createProjectCommandBashExtension({
                 cwd: sessionCwd,

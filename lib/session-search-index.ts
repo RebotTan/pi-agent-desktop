@@ -265,15 +265,19 @@ export class SessionSearchIndex {
     const db = this.open();
     if (!db) return null;
     const match = buildMatchExpression(query);
-    if (!match) return [];
+    // 无 token（存疑：纯标点查询）：交给流式实现 —— 它们用字面正则能命中
+    // 「(」这种，这里返回空数组就是两条路径行为不一致。
+    if (!match) return null;
 
     let rows: { path: string; entry_id: string | null; block_index: number; body: string }[];
     try {
       rows = db.prepare(`
         SELECT d.path AS path, d.entry_id AS entry_id, d.block_index AS block_index, d.body AS body
-        FROM docs_fts f JOIN docs d ON d.rowid = f.rowid
+        FROM docs_fts f
+        JOIN docs d ON d.rowid = f.rowid
+        JOIN files fl ON fl.path = d.path
         WHERE docs_fts MATCH ?
-        ORDER BY f.rowid
+        ORDER BY fl.mtime_ms DESC, f.rowid
         LIMIT ?
       `).all(match, MAX_CANDIDATES) as typeof rows;
     } catch {

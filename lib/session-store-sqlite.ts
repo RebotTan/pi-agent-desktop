@@ -134,6 +134,8 @@ async function scanSessionFileInfo(filePath: string): Promise<{
 export class SqliteSessionStore implements SessionStore {
   private db: DatabaseSync | null = null;
   private schemaReady = false;
+  /** 串行化 sync：并发请求排队，不重复 readdir + stat。 */
+  private syncChain: Promise<void> = Promise.resolve();
   private readonly fallback = new FileSystemSessionStore();
 
   constructor(private readonly dbPath: string = join(getAgentDir(), DB_FILE_NAME)) {}
@@ -190,6 +192,19 @@ export class SqliteSessionStore implements SessionStore {
 
   /** 增量同步：enumerate + stat + 对比 fingerprint → 变化则解析更新 SQLite。 */
   private async sync(): Promise<boolean> {
+    // 串行化：并发的 /api/sessions 请求不能各自跑一遍 readdir + stat。
+    const previous = this.syncChain;
+    let release: () => void = () => {};
+    this.syncChain = new Promise<void>((resolve) => { release = resolve; });
+    try {
+      await previous;
+      return await this.syncOnce();
+    } finally {
+      release();
+    }
+  }
+
+  private async syncOnce(): Promise<boolean> {
     const db = this.open();
     if (!db || !this.ensureSchema(db)) return false;
 
@@ -230,7 +245,8 @@ export class SqliteSessionStore implements SessionStore {
 
         const info = await scanSessionFileInfo(filePath);
         if (!info) {
-          deleteStmt.run(filePath);
+          // 文件还在、只是这轮读不出内容（半写/权限抖动）。删行会让会话
+          // 从列表里静默消失，下一次 sync 再试。
           continue;
         }
         upsertStmt.run(
@@ -247,7 +263,9 @@ export class SqliteSessionStore implements SessionStore {
           now,
         );
       } catch {
-        deleteStmt.run(filePath);
+        // 同上：任何单文件异常（SQLITE_BUSY / 只读库 / stat 竞态）都不能
+        // 当成「会话已删除」处理。旧行保留，下一轮再对齐。
+        continue;
       }
     }
     return true;
@@ -334,14 +352,36 @@ export class SqliteSessionStore implements SessionStore {
 
   async listSessions(options?: { force?: boolean; allowStale?: boolean }): Promise<SessionInfo[]> {
     if (options?.force) this.fallback.invalidateListCache();
+
+    // allowStale 的语义是「允许旧数据、但要便宜读」：直接发库里的行，
+    // 不跑 readdir + stat。库还没写开时（首次访问）才回退到全量 sync。
+    if (options?.allowStale) {
+      const rows = this.readRows();
+      if (rows.length === 0) return this.fallback.listSessions(options);
+      return this.attachProjectInfo(this.mapRows(rows));
+    }
+
     const synced = await this.sync();
     if (!synced) return this.fallback.listSessions(options);
+    const rows = this.readRows();
+    if (rows.length === 0) return this.fallback.listSessions(options);
+    return this.attachProjectInfo(this.mapRows(rows));
+  }
 
-    const db = this.open()!;
-    const rows = db.prepare("SELECT * FROM sessions ORDER BY modified DESC").all() as unknown as SessionRow[];
+  private readRows(): SessionRow[] {
+    const db = this.open();
+    if (!db || !this.ensureSchema(db)) return [];
+    try {
+      return db.prepare("SELECT * FROM sessions ORDER BY modified DESC").all() as unknown as SessionRow[];
+    } catch {
+      return [];
+    }
+  }
+
+  private mapRows(rows: SessionRow[]): SessionInfo[] {
     const pathToId = new Map<string, string>();
     for (const row of rows) pathToId.set(sessionPathKey(row.path), row.id);
-    return this.attachProjectInfo(rows.map((row) => this.toSessionInfo(row, pathToId)));
+    return rows.map((row) => this.toSessionInfo(row, pathToId));
   }
 
   async listSummaries(): Promise<SessionInfo[]> {

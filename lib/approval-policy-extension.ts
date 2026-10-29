@@ -20,7 +20,15 @@ export function approvalRejectedReason(toolName: string): string {
   return `工具调用 "${toolName}" 未获批准（用户拒绝）。`;
 }
 
-export function createApprovalPolicyExtension(): InlineExtension {
+export interface ApprovalPolicyExtensionOptions {
+  /** 发起审批的会话 id；带上才能在会话销毁时清掉残留的审批。 */
+  readonly sessionId?: string;
+}
+
+export function createApprovalPolicyExtension(
+  options: ApprovalPolicyExtensionOptions = {},
+): InlineExtension {
+  const { sessionId } = options;
   return {
     name: APPROVAL_POLICY_EXTENSION_NAME,
     hidden: true,
@@ -34,6 +42,7 @@ export function createApprovalPolicyExtension(): InlineExtension {
           const approved = await getApprovalCoordinator().requestApproval(
             event.toolName,
             { ...(event.input ?? {}) },
+            sessionId,
           );
           if (!approved) {
             return { block: true, reason: approvalRejectedReason(event.toolName) };

@@ -13,6 +13,8 @@ export interface PendingApprovalView {
   /** 工具参数只读快照（调用方传入的浅拷贝）。 */
   args: unknown;
   requestedAt: number;
+  /** 发起审批的会话；空表示来源未标注。 */
+  sessionId?: string;
 }
 
 interface PendingApproval extends PendingApprovalView {
@@ -21,9 +23,10 @@ interface PendingApproval extends PendingApprovalView {
 
 export class ApprovalCoordinator {
   private pending = new Map<string, PendingApproval>();
+  private cancelCallbacks = new Set<(id: string, reason: string) => void>();
 
   /** 挂起一次待审批，返回解析为 `approved` 的 Promise（settle 前不 resolve）。 */
-  requestApproval(toolName: string, args: unknown): Promise<boolean> {
+  requestApproval(toolName: string, args: unknown, sessionId?: string): Promise<boolean> {
     return new Promise<boolean>((resolve) => {
       const id = randomUUID();
       this.pending.set(id, {
@@ -31,6 +34,7 @@ export class ApprovalCoordinator {
         toolName,
         args,
         requestedAt: Date.now(),
+        sessionId,
         resolve,
       });
     });
@@ -38,11 +42,12 @@ export class ApprovalCoordinator {
 
   /** 当前所有待审批项（按挂起顺序）。 */
   listPending(): PendingApprovalView[] {
-    return [...this.pending.values()].map(({ id, toolName, args, requestedAt }) => ({
+    return [...this.pending.values()].map(({ id, toolName, args, requestedAt, sessionId }) => ({
       id,
       toolName,
       args,
       requestedAt,
+      ...(sessionId ? { sessionId } : {}),
     }));
   }
 
@@ -53,6 +58,36 @@ export class ApprovalCoordinator {
     this.pending.delete(id);
     item.resolve(approved);
     return true;
+  }
+
+  /**
+   * 取消待审批。会话被销毁 / fork / 空闲回收时调用，否则 agent 侧的 Promise
+   * 永远不 resolve，`pending` 也会一直涨。
+   *
+   * 返回被取消的条数。`reason` 只用于回调通知（"session_destroyed" 等），
+   * 被取消的审批一律按「未批准」resolve —— 宁可不执行，也不能默认放行。
+   */
+  cancel(filter: { sessionId?: string; id?: string }, reason: string): number {
+    const cancelled: string[] = [];
+    for (const [id, item] of this.pending) {
+      if (filter.id !== undefined && item.id !== filter.id) continue;
+      if (filter.sessionId !== undefined && item.sessionId !== filter.sessionId) continue;
+      this.pending.delete(id);
+      cancelled.push(id);
+      item.resolve(false);
+    }
+    for (const id of cancelled) {
+      for (const cb of this.cancelCallbacks) {
+        try { cb(id, reason); } catch { /* ignore listener errors */ }
+      }
+    }
+    return cancelled.length;
+  }
+
+  /** 订阅取消事件（UI 用来清掉已失效的卡片）。 */
+  onCancel(cb: (id: string, reason: string) => void): () => void {
+    this.cancelCallbacks.add(cb);
+    return () => this.cancelCallbacks.delete(cb);
   }
 
   /** 待审批数量（供轮询/去重用）。 */
