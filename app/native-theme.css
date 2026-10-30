@@ -9814,6 +9814,9 @@ html.dark .msg-rail-track {
   flex-shrink: 0;
 }
 .plugin-marketplace-result-install {
+  flex-shrink: 0;
+}
+/* Accent follows the system (macOS Appearance > Accent color). The blue above
    stays as the fallback for engines without the AccentColor keyword. */
 @supports (color: AccentColor) {
   :root,
