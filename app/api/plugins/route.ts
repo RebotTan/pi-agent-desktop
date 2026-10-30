@@ -486,13 +486,20 @@ export async function POST(req: Request) {
   }
 
   try {
-    const body = await req.json() as {
+    // 请求体不是合法 JSON 时是客户端问题，应该 400；直接让它落到外层 catch
+    // 会被误报成 500（服务端错）。
+    let body: {
       action?: PluginAction;
       source?: string;
       scope?: PluginScope;
       packages?: unknown;
       cwd?: string;
     };
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
     if (!body.cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
     if (!body.action) return NextResponse.json({ error: "action required" }, { status: 400 });
     const allowedRoots = await getAllowedFileRoots();
