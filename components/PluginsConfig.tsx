@@ -633,6 +633,30 @@ function PackageDetail({
         <ResourceList pkg={pkg} />
       </div>
 
+      {pkg.uiCards.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <ConfigSectionTitle>{t("i18n.pluginUiCards")}</ConfigSectionTitle>
+          <div className="plugin-ui-cards">
+            {pkg.uiCards.map((card) => (
+              <div key={card.id} className="plugin-ui-card">
+                <div className="plugin-ui-card-title">{card.title}</div>
+                {card.body && <div className="plugin-ui-card-body">{card.body}</div>}
+                {card.href && (
+                  <a
+                    href={card.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="plugin-ui-card-link"
+                  >
+                    {t("i18n.openLink")}
+                  </a>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {actionMessage && (
         <div style={{ fontSize: 12, color: "#16a34a" }}>
           {actionMessage}

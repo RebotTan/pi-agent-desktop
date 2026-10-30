@@ -869,6 +869,20 @@ export interface PluginUpdateResult {
   message?: string;
 }
 
+/**
+ * A declarative UI card a package declares in its `package.json` `pi.ui`
+ * array (ticket 0023). Only `status-card` is supported and every field is
+ * rendered as plain text, so a package can add a line to its Plugins detail
+ * without running code.
+ */
+export interface PluginUiCard {
+  id: string;
+  kind: "status-card";
+  title: string;
+  body?: string;
+  href?: string;
+}
+
 export interface PluginPackageInfo {
   source: string;
   scope: PluginScope;
@@ -882,6 +896,8 @@ export interface PluginPackageInfo {
   description?: string;
   counts: PluginResourceCounts;
   resources: PluginResourceInfo[];
+  /** Cards the package declares in `package.json`'s `pi.ui`. Usually empty. */
+  uiCards: PluginUiCard[];
   status: "loaded" | "installed" | "missing" | "disabled";
 }
 

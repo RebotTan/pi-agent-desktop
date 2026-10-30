@@ -13,6 +13,7 @@ import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-acces
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import { getProjectTrustStatus } from "@/lib/project-trust";
 import { isPluginSourceCheckable } from "@/lib/plugin-updates";
+import { readPluginUiCards } from "@/lib/plugin-ui";
 import type {
   PluginDiagnostic,
   PluginPackageInfo,
@@ -24,6 +25,7 @@ import type {
   PluginsBulkResponse,
   PluginsResponse,
   PluginToggleResult,
+  PluginUiCard,
 } from "@/lib/api-types";
 
 export const dynamic = "force-dynamic";
@@ -246,14 +248,19 @@ function getConfiguredVersion(source: string): string | undefined {
   return undefined;
 }
 
-function readPackageMetadata(installedPath?: string): { packageName?: string; version?: string; description?: string } {
-  if (!installedPath) return {};
+function readPackageMetadata(installedPath?: string): {
+  packageName?: string;
+  version?: string;
+  description?: string;
+  uiCards: PluginUiCard[];
+} {
+  if (!installedPath) return { uiCards: [] };
   try {
     const stats = statSync(installedPath);
     const packageJsonPath = stats.isDirectory()
       ? join(installedPath, "package.json")
       : join(dirname(installedPath), "package.json");
-    if (!existsSync(packageJsonPath)) return {};
+    if (!existsSync(packageJsonPath)) return { uiCards: [] };
     const parsed = JSON.parse(readFileSync(packageJsonPath, "utf8")) as {
       name?: unknown;
       version?: unknown;
@@ -263,9 +270,10 @@ function readPackageMetadata(installedPath?: string): { packageName?: string; ve
       packageName: typeof parsed.name === "string" ? parsed.name : undefined,
       version: typeof parsed.version === "string" ? parsed.version : undefined,
       description: typeof parsed.description === "string" ? parsed.description : undefined,
+      uiCards: readPluginUiCards(packageJsonPath),
     };
   } catch {
-    return {};
+    return { uiCards: [] };
   }
 }
 
@@ -385,6 +393,7 @@ async function readPlugins(cwd: string): Promise<PluginsResponse> {
       description: packageMetadata.description,
       counts,
       resources,
+      uiCards: packageMetadata.uiCards,
       status: disabled ? "disabled" : resourceCount > 0 ? "loaded" : pkg.installedPath ? "installed" : "missing",
     } satisfies PluginPackageInfo;
   });

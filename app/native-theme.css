@@ -9972,3 +9972,54 @@ html.dark .terminal-panel {
 @media (pointer: coarse) {
   .conversation-find-row button { width: 44px; height: 44px; }
 }
+
+/* === 0023 · Plugin declared UI cards =====================================
+   A package declares cards in its package.json `pi.ui` array; the Plugins
+   detail pane renders them here as plain text plus an optional outbound link
+   (ticket 0023). Nothing in these rules is interactive beyond the anchor. */
+.plugin-ui-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.plugin-ui-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 12px;
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+}
+.plugin-ui-card-title {
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--text);
+}
+.plugin-ui-card-body {
+  font-size: var(--fs-caption);
+  line-height: 1.5;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.plugin-ui-card-link {
+  align-self: flex-start;
+  font-size: var(--fs-caption);
+  color: var(--accent);
+  text-decoration: none;
+  border-radius: var(--radius-sm);
+}
+.plugin-ui-card-link:hover {
+  text-decoration: underline;
+}
+.plugin-ui-card-link:focus-visible {
+  outline: 2px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+/* Match the mobile touch-target rule the rest of the settings panes use. */
+@media (pointer: coarse) {
+  .plugin-ui-card-link {
+    padding: 8px 0;
+  }
+}

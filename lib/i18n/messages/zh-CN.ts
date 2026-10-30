@@ -1289,6 +1289,8 @@ export const zhCNLocale: LocalePlugin = {
     "i18n.addPlugin": "添加插件",
     "i18n.pluginSearchPlaceholder": "在 npm 仓库搜索 pi 插件…",
     "i18n.noPluginsFound": "未找到插件",
+    "i18n.pluginUiCards": "插件声明的界面",
+    "i18n.openLink": "打开 ↗",
     "i18n.selectSkill": "选择技能",
     "i18n.selectPackage": "选择包",
     "i18n.updateAvailable": "有可用更新",

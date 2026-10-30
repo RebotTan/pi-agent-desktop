@@ -1289,6 +1289,8 @@ export const zhTWLocale: LocalePlugin = {
     "i18n.addPlugin": "新增外掛",
     "i18n.pluginSearchPlaceholder": "在 npm 倉庫搜尋 pi 外掛…",
     "i18n.noPluginsFound": "未找到外掛",
+    "i18n.pluginUiCards": "外掛宣告的介面",
+    "i18n.openLink": "開啟 ↗",
     "i18n.selectSkill": "選擇技能",
     "i18n.selectPackage": "選擇套件",
     "i18n.updateAvailable": "有可用更新",
