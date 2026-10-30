@@ -177,18 +177,22 @@ PR-1/PR-2 把会话运行时状态收进 `AgentEngine` 接口。骨架版 `Sidec
 
 写路径仍走 SDK（不同步）；`PI_SESSION_STORE=sqlite` 启用，缺省仍 `FileSystemSessionStore`（零风险默认）。实测 53 会话时 warm FS 14-18ms vs warm SQLite 47-50ms（SQLite 因 sync 开销略慢；优势在数百会话时 FS 枚举占主导）。
 
----
-
-#### 14. 插件 UI contribution 落地（第一个真实插件）
+### 14. 插件市场搜索 + 插件声明的 UI 卡片
 
 | 项 | 值 |
 |---|---|
-| seam | PR-6 的 `registerUiContribution` |
-| 解锁 | 验证三层注册点设计、工具卡片/面板扩展 |
-| 投入 | 2–3 天 |
-| 优先级 | ★★☆ |
+| ticket | `.scratch/tickets/0022-plugin-marketplace-search.md`、`.scratch/tickets/0023-plugin-ui-cards.md` |
+| commit | `91781bd`（市场搜索）、`f1134dc`（UI 卡片） |
+| seam | `POST /api/plugins/search` 与 `PluginPackageInfo.uiCards` |
+| 文件 | `lib/plugin-search.ts`、`lib/plugin-ui.ts`、`app/api/plugins/search/route.ts`、`components/PluginsConfig.tsx` |
+| 解锁 | 装插件不用背 source；插件能往界面加一行（三层注册点的 UI 层首次落地） |
 
-PR-6 只留了注册点骨架。挂第一个真实 UI 插件（比如「会话用量统计卡」或「Git 状态面板」），跑通 contribution → `/api/plugins/contributions` → 前端 slot 渲染全链路。
+市场搜索打 `https://registry.npmjs.org/-/v1/search`，查询串始终带 `keywords:pi-package`（不带时 314632 条垃圾，带上 13021 条真 pi 插件）。安装走 pi SDK 的 `DefaultPackageManager.installAndPersist` —— 装完下次会话 `resolve()` 自动发现 `extensions/skills/prompts/themes`，「安装即同步可用」这条链 SDK 本来就通，缺的只是发现。
+
+UI 卡片是声明式的：包在 `package.json` 的 `pi.ui` 数组里写 `{id, kind: "status-card", title, body?, href?}`，Plugins 详情页渲染成纯文本卡 + 外链。选声明式而非「插件跑代码注册 React 组件」，理由与 #15 真隔离同一个：跨进程组件、iframe 沙箱、样式隔离、生命周期四件高危事项，先证明链路走得通。校验规则：只认 `status-card`、`href` 白名单仅 http/https（`javascript:` 丢弃但保留卡片）、同包重复 id 去重、单包上限 12 条；任何非法条目静默丢弃，不让一个写错的插件把 `/api/plugins` 打成 500。
+
+---
+
 
 ### 中优先级（架构演进）
 
