@@ -7,6 +7,7 @@ import { directoryPermissionMessage, isPermissionError } from "@/lib/directory-b
 import { projectIdentityKey } from "@/lib/project-identity";
 import { resolveProject } from "@/lib/worktree";
 import { ensureChatCwd, ensureChatWorkspace, isChatRootPath, isChatWorkspacePath } from "@/lib/chat-workspace";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 function normalizeCwd(cwd: string): string {
   if (cwd === "~") return userHome();
@@ -18,7 +19,8 @@ function normalizeCwd(cwd: string): string {
 // Validates a candidate workspace before the UI selects it.
 export async function POST(req: Request) {
   try {
-    const body = await req.json() as { cwd?: unknown };
+    const body = await readJsonBody<{ cwd?: unknown }>(req);
+    if (isJsonBodyError(body)) return body;
     const cwd = typeof body.cwd === "string" ? body.cwd.trim() : "";
 
     if (!cwd) {

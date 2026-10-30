@@ -28,6 +28,7 @@ import { jsonResponse } from "@/lib/json-response";
 import { isChatFolderPath } from "@/lib/chat-workspace";
 import { samePath } from "@/lib/paths";
 import { moveFolderToTrash } from "@/lib/trash";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 export async function GET(
   req: Request,
@@ -182,7 +183,9 @@ export async function PATCH(
 ) {
   const { id } = await params;
   try {
-    const { name } = await req.json() as { name?: string };
+    const parsedBody = await readJsonBody<{ name?: string }>(req);
+    if (isJsonBodyError(parsedBody)) return parsedBody;
+    const { name } = parsedBody;
     if (typeof name !== "string") {
       return NextResponse.json({ error: "name is required" }, { status: 400 });
     }

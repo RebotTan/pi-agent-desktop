@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { runNpx } from "@/lib/npx";
 import type { SkillSearchResult } from "@/lib/api-types";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 export const dynamic = "force-dynamic";
 
@@ -90,7 +91,9 @@ function parseInstallCount(installs: string): number {
 // POST /api/skills/search  body: { query: string, limit?: number }
 export async function POST(req: Request) {
   try {
-    const { query, limit: rawLimit } = await req.json() as { query?: string; limit?: unknown };
+    const parsedBody = await readJsonBody<{ query?: string; limit?: unknown }>(req);
+    if (isJsonBodyError(parsedBody)) return parsedBody;
+    const { query, limit: rawLimit } = parsedBody;
     if (!query?.trim()) return NextResponse.json({ error: "query required" }, { status: 400 });
     const limit = parseLimit(rawLimit);
 

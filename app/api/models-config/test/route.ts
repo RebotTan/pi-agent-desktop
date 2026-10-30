@@ -5,6 +5,7 @@ import { join } from "path";
 import { completeSimple, type AssistantMessage } from "@earendil-works/pi-ai/compat";
 import { ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +40,8 @@ export async function POST(req: Request) {
   let tempDir: string | undefined;
 
   try {
-    const body = await req.json() as { providerName?: unknown; provider?: unknown; model?: unknown };
+    const body = await readJsonBody<{ providerName?: unknown; provider?: unknown; model?: unknown }>(req);
+    if (isJsonBodyError(body)) return body;
     const providerName = typeof body.providerName === "string" ? body.providerName.trim() : "";
     if (!providerName) return NextResponse.json({ ok: false, error: "providerName is required" }, { status: 400 });
     if (!isRecord(body.provider)) return NextResponse.json({ ok: false, error: "provider is required" }, { status: 400 });

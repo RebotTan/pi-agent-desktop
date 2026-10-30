@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getTerminalCwd, killTerminal, resizeTerminal, writeTerminal } from "@/lib/terminal-manager";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -18,7 +19,8 @@ export async function POST(
 ) {
   try {
     const { id } = await params;
-    const body = await req.json() as { type?: unknown; data?: unknown; cols?: unknown; rows?: unknown };
+    const body = await readJsonBody<{ type?: unknown; data?: unknown; cols?: unknown; rows?: unknown }>(req);
+    if (isJsonBodyError(body)) return body;
     if (body.type === "input" && typeof body.data === "string" && body.data.length <= 64 * 1024) {
       return writeTerminal(id, body.data)
         ? NextResponse.json({ success: true })

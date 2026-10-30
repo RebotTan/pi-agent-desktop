@@ -1,4 +1,5 @@
 import { shareModelCatalogRefresh } from "@/lib/model-catalog-refresh";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,8 @@ export const dynamic = "force-dynamic";
 export async function POST(req: Request) {
   let provider: string | undefined;
   try {
-    const body = await req.json() as { provider?: unknown };
+    const body = await readJsonBody<{ provider?: unknown }>(req);
+    if (isJsonBodyError(body)) return body;
     if (typeof body?.provider === "string" && body.provider.trim()) {
       provider = body.provider.trim();
     }

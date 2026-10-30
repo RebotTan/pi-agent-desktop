@@ -2,13 +2,15 @@ import { NextResponse } from "next/server";
 import { existsSync } from "fs";
 import { fetchRemote, listLocalBranches, listRemoteBranches, partitionBranchList, resolveProject } from "@/lib/worktree";
 import { isCwdAllowed } from "@/lib/file-access";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 // POST /api/worktrees/fetch  body: { cwd }  →  { branches, remoteBranches }
 // Runs `git fetch --prune` and returns the fresh branch lists so the switcher
 // shows remote branches that were pushed since the last look.
 export async function POST(req: Request) {
   try {
-    const body = await req.json() as { cwd?: string };
+    const body = await readJsonBody<{ cwd?: string }>(req);
+    if (isJsonBodyError(body)) return body;
     if (!body.cwd || typeof body.cwd !== "string") {
       return NextResponse.json({ error: "cwd is required" }, { status: 400 });
     }

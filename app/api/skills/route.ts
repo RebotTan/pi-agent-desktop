@@ -7,6 +7,7 @@ import { loadSkillsWithInstallInfo } from "@/lib/skills-service";
 import { setDisableModelInvocation } from "@/lib/skill-frontmatter";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import { userHome } from "@/lib/user-home";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 export const dynamic = "force-dynamic";
 
@@ -68,11 +69,12 @@ function toggleSkillFile(
 // a skill the route refuses does not stop the rest.
 export async function PATCH(req: Request) {
   try {
-    const body = await req.json() as {
+    const body = await readJsonBody<{
       filePath?: string;
       filePaths?: unknown;
       disableModelInvocation: boolean;
-    };
+    }>(req);
+    if (isJsonBodyError(body)) return body;
     const { filePath, filePaths, disableModelInvocation } = body;
 
     if (filePaths !== undefined) {

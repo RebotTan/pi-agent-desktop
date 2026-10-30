@@ -6,6 +6,7 @@ import { allowFileRoot } from "@/lib/file-access";
 import { invalidateSessionListCache } from "@/lib/session-reader";
 import { startRpcSession } from "@/lib/rpc-manager";
 import { ensureChatWorkspace, isChatWorkspacePath } from "@/lib/chat-workspace";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
@@ -24,7 +25,8 @@ export async function POST(req: Request) {
   let commandType: string | undefined;
   let promptAccepted = false;
   try {
-    const body = await req.json() as { cwd?: string; [key: string]: unknown };
+    const body = await readJsonBody<{ cwd?: string; [key: string]: unknown }>(req);
+    if (isJsonBodyError(body)) return body;
     const { cwd, ...command } = body;
     const chatWorkspace = typeof cwd === "string" && isChatWorkspacePath(cwd);
     commandType = typeof command.type === "string" ? command.type : undefined;

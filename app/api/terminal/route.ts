@@ -3,13 +3,15 @@ import { resolve } from "path";
 import { NextResponse } from "next/server";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
 import { createTerminal } from "@/lib/terminal-manager";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json() as { id?: unknown; cwd?: unknown; cols?: unknown; rows?: unknown };
+    const body = await readJsonBody<{ id?: unknown; cwd?: unknown; cols?: unknown; rows?: unknown }>(req);
+    if (isJsonBodyError(body)) return body;
     if (body.id !== undefined && (typeof body.id !== "string" || !/^[a-f0-9]{32}$/.test(body.id))) {
       return NextResponse.json({ error: "Invalid terminal id" }, { status: 400 });
     }

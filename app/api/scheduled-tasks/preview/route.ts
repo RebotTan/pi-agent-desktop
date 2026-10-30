@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { errorResponse, rejectUnsafeWrite } from "@/lib/scheduled-tasks/api";
 import { nextCronRuns, systemTimezone, validateCron } from "@/lib/scheduled-tasks/cron";
 import { isValidationError } from "@/lib/scheduled-tasks/types";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 export const dynamic = "force-dynamic";
 
@@ -12,7 +13,8 @@ export async function POST(req: Request) {
   const rejected = rejectUnsafeWrite(req);
   if (rejected) return rejected;
   try {
-    const body = await req.json() as { expr?: unknown; timezone?: unknown };
+    const body = await readJsonBody<{ expr?: unknown; timezone?: unknown }>(req);
+    if (isJsonBodyError(body)) return body;
     if (typeof body.expr !== "string" || !body.expr.trim()) {
       return NextResponse.json({ valid: false, error: "expr is required" }, { status: 400 });
     }

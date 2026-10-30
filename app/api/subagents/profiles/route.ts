@@ -9,6 +9,7 @@ import {
   type SubagentWritableScope,
 } from "@/lib/subagents";
 import { writeDisabledBuiltInSubagent } from "@/lib/subagent-settings";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 export const dynamic = "force-dynamic";
 
@@ -42,11 +43,12 @@ export async function GET(req: Request) {
 
 export async function PUT(req: Request) {
   try {
-    const body = await req.json() as {
+    const body = await readJsonBody<{
       cwd?: unknown;
       scope?: unknown;
       profile?: Omit<SubagentProfile, "scope" | "filePath">;
-    };
+    }>(req);
+    if (isJsonBodyError(body)) return body;
     const cwd = await validateCwd(body.cwd);
     const scope = validateScope(body.scope);
     if (!body.profile || typeof body.profile.name !== "string") {
@@ -61,7 +63,8 @@ export async function PUT(req: Request) {
 
 export async function PATCH(req: Request) {
   try {
-    const body = await req.json() as { cwd?: unknown; scope?: unknown; name?: unknown; enabled?: unknown };
+    const body = await readJsonBody<{ cwd?: unknown; scope?: unknown; name?: unknown; enabled?: unknown }>(req);
+    if (isJsonBodyError(body)) return body;
     const cwd = await validateCwd(body.cwd);
     const scope = validateToggleScope(body.scope);
     if (typeof body.name !== "string") return NextResponse.json({ error: "name required" }, { status: 400 });
@@ -100,7 +103,8 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   try {
-    const body = await req.json() as { cwd?: unknown; scope?: unknown; name?: unknown };
+    const body = await readJsonBody<{ cwd?: unknown; scope?: unknown; name?: unknown }>(req);
+    if (isJsonBodyError(body)) return body;
     const cwd = await validateCwd(body.cwd);
     const scope = validateScope(body.scope);
     if (typeof body.name !== "string") return NextResponse.json({ error: "name required" }, { status: 400 });

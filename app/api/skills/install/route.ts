@@ -5,6 +5,7 @@ import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-acces
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import { getProjectTrustStatus } from "@/lib/project-trust";
 import { isVerboseLogging } from "@/bin/pi-web-options.js";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 export const dynamic = "force-dynamic";
 
@@ -20,7 +21,9 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { package: rawPkg, scope, cwd } = await req.json() as { package?: unknown; scope?: string; cwd?: string };
+    const parsedBody = await readJsonBody<{ package?: unknown; scope?: string; cwd?: string }>(req);
+    if (isJsonBodyError(parsedBody)) return parsedBody;
+    const { package: rawPkg, scope, cwd } = parsedBody;
     const pkg = typeof rawPkg === "string" ? rawPkg.trim() : "";
     if (!pkg) return NextResponse.json({ error: "package required" }, { status: 400 });
     // Passed as argv (never through a shell), but a leading "-" would still be

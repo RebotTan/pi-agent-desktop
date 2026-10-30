@@ -3,6 +3,7 @@ import { errorResponse, rejectUnsafeWrite, toTaskView } from "@/lib/scheduled-ta
 import { emitScheduledTaskEvent } from "@/lib/scheduled-tasks";
 import { applyTaskPatch } from "@/lib/scheduled-tasks/task-input";
 import { deleteTask, getTask, mutateTasks } from "@/lib/scheduled-tasks/store";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,8 @@ export async function PATCH(req: Request, { params }: Params) {
   if (rejected) return rejected;
   const { id } = await params;
   try {
-    const body: unknown = await req.json();
+    const body = await readJsonBody<unknown>(req);
+    if (isJsonBodyError(body)) return body;
     const now = new Date();
     const updated = mutateTasks((tasks) => {
       const index = tasks.findIndex((task) => task.id === id);

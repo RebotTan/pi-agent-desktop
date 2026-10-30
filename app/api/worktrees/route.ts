@@ -14,6 +14,7 @@ import {
 } from "@/lib/worktree";
 import { allowFileRoot, isCwdAllowed } from "@/lib/file-access";
 import { projectIdentityKey } from "@/lib/project-identity";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 /** Same gate as /api/files: only session cwds / project roots / explicitly
  *  allowed dirs may be inspected or mutated through this endpoint. */
@@ -80,7 +81,8 @@ export async function GET(req: Request) {
 // POST /api/worktrees  body: { cwd, branch }  →  { path, branch }
 export async function POST(req: Request) {
   try {
-    const body = await req.json() as { cwd?: string; branch?: string };
+    const body = await readJsonBody<{ cwd?: string; branch?: string }>(req);
+    if (isJsonBodyError(body)) return body;
     if (!body.cwd || typeof body.cwd !== "string") {
       return NextResponse.json({ error: "cwd is required" }, { status: 400 });
     }
@@ -106,7 +108,8 @@ export async function POST(req: Request) {
 // tracking branch when the name only exists on one remote).
 export async function PUT(req: Request) {
   try {
-    const body = await req.json() as { cwd?: string; branch?: string };
+    const body = await readJsonBody<{ cwd?: string; branch?: string }>(req);
+    if (isJsonBodyError(body)) return body;
     if (!body.cwd || typeof body.cwd !== "string") {
       return NextResponse.json({ error: "cwd is required" }, { status: 400 });
     }
@@ -130,7 +133,8 @@ export async function PUT(req: Request) {
 // DELETE /api/worktrees  body: { cwd, path, force? }
 export async function DELETE(req: Request) {
   try {
-    const body = await req.json() as { cwd?: string; path?: string; force?: boolean };
+    const body = await readJsonBody<{ cwd?: string; path?: string; force?: boolean }>(req);
+    if (isJsonBodyError(body)) return body;
     if (!body.cwd || typeof body.cwd !== "string") {
       return NextResponse.json({ error: "cwd is required" }, { status: 400 });
     }

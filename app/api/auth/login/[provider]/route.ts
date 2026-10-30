@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { invalidateModelsCache } from "@/lib/models-cache";
 import { createModelRuntimeWithExtensions } from "@/lib/model-runtime";
 import { oauthLoginOptions } from "@/lib/oauth-login-options";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,9 @@ export async function POST(
   { params }: { params: Promise<{ provider: string }> }
 ) {
   const { provider } = await params;
-  const { token, code } = (await req.json()) as { token?: string; code?: string };
+  const parsedBody = await readJsonBody<{ token?: string; code?: string }>(req);
+  if (isJsonBodyError(parsedBody)) return parsedBody;
+  const { token, code } = parsedBody;
 
   if (!token || !code) {
     return Response.json({ error: "token and code required" }, { status: 400 });

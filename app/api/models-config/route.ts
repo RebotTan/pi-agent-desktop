@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { ModelsConfigReadError, readModelsConfig, writeModelsConfig } from "@/lib/models-config-store";
 import { mergeStoredLiteralApiKeys, redactModelsJson } from "@/lib/models-config-redaction";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,8 @@ export async function GET() {
 
 export async function PUT(req: Request) {
   try {
-    const body = await req.json() as Record<string, unknown>;
+    const body = await readJsonBody<Record<string, unknown>>(req);
+    if (isJsonBodyError(body)) return body;
     const existing = readModelsConfig();
     const incomingProviders = (body.providers ?? {}) as Record<string, Record<string, unknown>>;
     const existingProviders = (existing.providers ?? {}) as Record<string, Record<string, unknown>>;

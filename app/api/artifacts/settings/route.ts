@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import { isArtifactsPromptEnabled, writeArtifactsPromptEnabled } from "@/lib/artifact-settings";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +17,8 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
   }
   try {
-    const body = await req.json() as { enabled?: unknown };
+    const body = await readJsonBody<{ enabled?: unknown }>(req);
+    if (isJsonBodyError(body)) return body;
     if (typeof body?.enabled !== "boolean") {
       return NextResponse.json({ error: "enabled must be a boolean" }, { status: 400 });
     }

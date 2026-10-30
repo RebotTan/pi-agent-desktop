@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { abortSubagent, getSubagentRun, steerSubagent } from "@/lib/rpc-manager";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,8 @@ export async function POST(
 ) {
   const { id } = await params;
   try {
-    const body = await req.json() as { action?: unknown; message?: unknown };
+    const body = await readJsonBody<{ action?: unknown; message?: unknown }>(req);
+    if (isJsonBodyError(body)) return body;
     if (body.action === "steer") {
       if (typeof body.message !== "string" || !body.message.trim()) {
         return NextResponse.json({ error: "message required" }, { status: 400 });

@@ -3,16 +3,18 @@ import type { SkillInstallScope } from "@/lib/api-types";
 import { checkSkillUpdates } from "@/lib/skill-updates";
 import { loadSkillsWithInstallInfo } from "@/lib/skills-service";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json() as {
+    const body = await readJsonBody<{
       cwd?: unknown;
       package?: unknown;
       scope?: unknown;
-    };
+    }>(req);
+    if (isJsonBodyError(body)) return body;
     const cwd = typeof body.cwd === "string" ? body.cwd : "";
     if (!cwd) return NextResponse.json({ error: "cwd required" }, { status: 400 });
     const allowedRoots = await getAllowedFileRoots();

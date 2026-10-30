@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { resolveSessionPath } from "@/lib/session-reader";
 import { startRpcSession, getRpcSession, setRpcSessionTools } from "@/lib/rpc-manager";
 import { getComposerQueueVersion, getPendingComposerMessages } from "@/lib/composer-queue";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 // POST /api/agent/[id] - Send a command to an existing session
 export async function POST(
@@ -13,7 +14,8 @@ export async function POST(
   let promptAccepted = false;
 
   try {
-    const body = await req.json() as { type: string; [key: string]: unknown };
+    const body = await readJsonBody<{ type: string; [key: string]: unknown }>(req);
+    if (isJsonBodyError(body)) return body;
     commandType = typeof body.type === "string" ? body.type : undefined;
     const requestedToolNames = body.toolNames;
     if (

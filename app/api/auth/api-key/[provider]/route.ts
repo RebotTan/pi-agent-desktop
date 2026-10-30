@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { invalidateModelsCache } from "@/lib/models-cache";
 import { removeStoredCredentialIfType, storeProviderCredential } from "@/lib/provider-credential-store";
 import { createModelRuntimeWithExtensions } from "@/lib/model-runtime";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 export const dynamic = "force-dynamic";
 
@@ -11,7 +12,9 @@ type Params = { params: Promise<{ provider: string }> };
 export async function POST(req: Request, { params }: Params) {
   const { provider } = await params;
   try {
-    const { apiKey } = await req.json() as { apiKey?: string };
+    const parsedBody = await readJsonBody<{ apiKey?: string }>(req);
+    if (isJsonBodyError(parsedBody)) return parsedBody;
+    const { apiKey } = parsedBody;
     if (!apiKey || typeof apiKey !== "string" || !apiKey.trim()) {
       return NextResponse.json({ error: "apiKey is required" }, { status: 400 });
     }

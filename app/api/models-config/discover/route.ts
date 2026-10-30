@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { resolveModelDiscoveryAuth } from "@/lib/model-discovery-auth";
 import { buildModelsListUrl, nextModelsPageUrl, parseDiscoveredModels } from "@/lib/model-discovery";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 export const dynamic = "force-dynamic";
 
@@ -33,7 +34,8 @@ function buildHeaders(api: string, apiKey: string | undefined, configured: Recor
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json() as { providerName?: unknown; provider?: unknown };
+    const body = await readJsonBody<{ providerName?: unknown; provider?: unknown }>(req);
+    if (isJsonBodyError(body)) return body;
     const providerName = typeof body.providerName === "string" ? body.providerName.trim() : "";
     if (!providerName) return NextResponse.json({ error: "providerName is required" }, { status: 400 });
     if (!isRecord(body.provider)) return NextResponse.json({ error: "provider is required" }, { status: 400 });

@@ -11,6 +11,7 @@ import {
   resolveSessionPath,
 } from "@/lib/session-reader";
 import { appendClearedSessionToolSelection } from "@/lib/session-tool-selection";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 export const runtime = "nodejs";
 
@@ -25,7 +26,8 @@ export async function POST(
 ) {
   const { id } = await params;
   try {
-    const body = await req.json() as { cwd?: unknown };
+    const body = await readJsonBody<{ cwd?: unknown }>(req);
+    if (isJsonBodyError(body)) return body;
     if (typeof body.cwd !== "string" || !body.cwd.trim()) {
       return NextResponse.json({ error: "cwd is required" }, { status: 400 });
     }

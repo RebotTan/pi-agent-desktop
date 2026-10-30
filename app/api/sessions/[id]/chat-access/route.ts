@@ -7,6 +7,7 @@ import { getRpcSession, setRpcChatUnlock } from "@/lib/rpc-manager";
 import { openSessionManager, readSessionHeader, resolveSessionPath } from "@/lib/session-reader";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import type { SessionEntry } from "@/lib/types";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -67,7 +68,8 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "Content-Type must be application/json" }, { status: 415 });
   }
   try {
-    const body = await req.json() as { unlocked?: unknown };
+    const body = await readJsonBody<{ unlocked?: unknown }>(req);
+    if (isJsonBodyError(body)) return body;
     if (typeof body.unlocked !== "boolean") {
       return NextResponse.json({ error: "unlocked must be a boolean" }, { status: 400 });
     }

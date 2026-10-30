@@ -3,6 +3,7 @@ import { errorResponse, rejectUnsafeWrite, toTaskView } from "@/lib/scheduled-ta
 import { getScheduler, emitScheduledTaskEvent } from "@/lib/scheduled-tasks";
 import { buildTask } from "@/lib/scheduled-tasks/task-input";
 import { listTasks, mutateTasks } from "@/lib/scheduled-tasks/store";
+import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +26,8 @@ export async function POST(req: Request) {
   const rejected = rejectUnsafeWrite(req);
   if (rejected) return rejected;
   try {
-    const body: unknown = await req.json();
+    const body = await readJsonBody<unknown>(req);
+    if (isJsonBodyError(body)) return body;
     const now = new Date();
     const task = mutateTasks((tasks) => {
       const created = buildTask(body, { now, otherNames: tasks.map((existing) => existing.name) });
