@@ -1,5 +1,19 @@
 # @agegr/pi-web
 
+## 0.10.10
+
+### Patch Changes
+
+- [`f1134dc`](https://github.com/RebotTan/pi-agent-desktop/commit/f1134dce1bf7eec5fac1e90a9f3e29931a7f759a) Thanks [@tanjianwd](https://github.com/tanjianwd)! - feat(plugins): let a package declare UI cards in `package.json`'s `pi.ui`
+
+- [`d3779f5`](https://github.com/RebotTan/pi-agent-desktop/commit/d3779f592d879614d9b5a8284a293f39430a7d4b) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Remove plugins by the source stored in settings, so uninstalling a local-path package actually removes it.
+
+- [`c478676`](https://github.com/RebotTan/pi-agent-desktop/commit/c47867623d2fa4b52dfe0c635258320e5611b40d) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Stop `update` from failing on a local-path plugin whose relative source never matches its settings entry.
+
+- [`665417c`](https://github.com/RebotTan/pi-agent-desktop/commit/665417c904d3b6b3a1c65e0a75567d56dfce8680) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Answer `POST /api/plugins` with 400 instead of 500 when the request body is not valid JSON.
+
+- [`4ef032c`](https://github.com/RebotTan/pi-agent-desktop/commit/4ef032c357c1cdc3a5bb47d62dde69c5d5a0c82c) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Answer malformed JSON request bodies with 400 across the API routes instead of reporting them as server errors.
+
 ## 0.10.9
 
 ### Patch Changes
