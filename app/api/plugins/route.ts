@@ -14,6 +14,7 @@ import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security"
 import { getProjectTrustStatus } from "@/lib/project-trust";
 import { isPluginSourceCheckable } from "@/lib/plugin-updates";
 import { readPluginUiCards } from "@/lib/plugin-ui";
+import { getPackageSourceString, removePackageSource } from "@/lib/plugin-settings";
 import type {
   PluginDiagnostic,
   PluginPackageInfo,
@@ -44,8 +45,27 @@ function keyFor(source: string, scope: PluginScope): string {
   return `${scope}\0${source}`;
 }
 
-function getPackageSource(entry: PackageSource): string {
-  return typeof entry === "string" ? entry : entry.source;
+/**
+ * 按 settings 里的原文再删一次包条目。
+ *
+ * `removeAndPersist` 用 cwd 解析相对路径来匹配 settings，而它自己写入时用的是
+ * 相对 agentDir（全局）或项目目录的路径；两者层级不同就会匹配不上，删除返回
+ * changed false 而 settings 里那条还在（ticket 0024）。这里不参与路径解析，
+ * 直接按 UI 上看到的那串 source 删。
+ */
+async function dropConfiguredPackageSource(
+  settingsManager: SettingsManager,
+  source: string,
+  scope: PluginScope,
+): Promise<void> {
+  const settings = scope === "project"
+    ? settingsManager.getProjectSettings()
+    : settingsManager.getGlobalSettings();
+  const next = removePackageSource(settings.packages ?? [], source);
+  if (!next) return;
+  if (scope === "project") settingsManager.setProjectPackages(next);
+  else settingsManager.setPackages(next);
+  await settingsManager.flush();
 }
 
 function isDisabledPackage(entry: PackageSource): boolean {
@@ -61,10 +81,10 @@ function isDisabledPackage(entry: PackageSource): boolean {
 function getDisabledPackages(settingsManager: SettingsManager): Map<string, boolean> {
   const disabled = new Map<string, boolean>();
   for (const entry of settingsManager.getGlobalSettings().packages ?? []) {
-    disabled.set(keyFor(getPackageSource(entry), "global"), isDisabledPackage(entry));
+    disabled.set(keyFor(getPackageSourceString(entry), "global"), isDisabledPackage(entry));
   }
   for (const entry of settingsManager.getProjectSettings().packages ?? []) {
-    disabled.set(keyFor(getPackageSource(entry), "project"), isDisabledPackage(entry));
+    disabled.set(keyFor(getPackageSourceString(entry), "project"), isDisabledPackage(entry));
   }
   return disabled;
 }
@@ -105,7 +125,7 @@ function setPackagesDisabled(
   const kept = new Set<string>();
   let changed = false;
   const next = current.map((entry): PackageSource => {
-    const source = getPackageSource(entry);
+    const source = getPackageSourceString(entry);
     if (!sources.includes(source)) return entry;
     missing.delete(source);
     if (isDisabledPackage(entry) === disabled) return entry;
@@ -497,6 +517,7 @@ export async function POST(req: Request) {
     } else if (body.action === "remove") {
       if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
       await packageManager.removeAndPersist(source, { local });
+      await dropConfiguredPackageSource(settingsManager, source, scope);
     } else if (body.action === "update") {
       if (!source && !projectTrust.trusted && packageManager.listConfiguredPackages().some((pkg) => pkg.scope === "project")) {
         return NextResponse.json(
