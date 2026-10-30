@@ -55,6 +55,21 @@ export interface SkillSearchResult {
   url: string;
 }
 
+/** A pi plugin package found in the npm registry marketplace search. */
+export interface PluginSearchResult {
+  /** npm package name, e.g. `pi-mcp-extension` or `@scope/pi-plugin`. */
+  name: string;
+  version: string;
+  description: string;
+  /** Formatted weekly download count, e.g. `12.3K`. */
+  weeklyDownloads: string;
+  /** `https://www.npmjs.com/package/<name>`. */
+  npmUrl: string;
+  /** Optional homepage / repository URL from package links. */
+  homepage?: string;
+  license?: string;
+}
+
 export type SkillInstallScope = "global" | "project";
 
 export interface SkillInstallInfo {

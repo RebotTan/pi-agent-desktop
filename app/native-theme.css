@@ -9746,3 +9746,89 @@ html.dark .msg-rail-track {
     height: 40px;
   }
 }
+
+/* === 0022 · Plugin marketplace search === */
+.plugin-marketplace-search {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 16px;
+}
+.plugin-marketplace-search-row {
+  display: flex;
+  gap: 8px;
+}
+.plugin-marketplace-input {
+  flex: 1;
+  padding: 7px 10px;
+  font-size: var(--fs-small);
+  background: var(--bg-panel);
+  border: var(--hairline) solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  outline: none;
+}
+.plugin-marketplace-input:focus {
+  border-color: var(--accent);
+}
+.plugin-marketplace-error {
+  font-size: var(--fs-small);
+  color: var(--danger);
+}
+.plugin-marketplace-results {
+  flex: 1;
+  overflow-y: auto;
+}
+.plugin-marketplace-result {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 0;
+  border-bottom: var(--hairline) solid var(--border);
+}
+.plugin-marketplace-result-info {
+  flex: 1;
+  min-width: 0;
+}
+.plugin-marketplace-result-name {
+  font-size: var(--fs-body);
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 3px;
+  font-family: var(--font-mono);
+}
+.plugin-marketplace-result-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.plugin-marketplace-result-desc {
+  font-size: var(--fs-small);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 400px;
+}
+.plugin-marketplace-result-downloads {
+  font-size: var(--fs-small);
+  color: var(--text-muted);
+  font-weight: 500;
+  flex-shrink: 0;
+}
+.plugin-marketplace-result-version {
+  font-size: var(--fs-caption);
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+}
+.plugin-marketplace-result-link {
+  font-size: var(--fs-small);
+  color: var(--accent);
+  text-decoration: none;
+  flex-shrink: 0;
+}
+.plugin-marketplace-result-install {
+  flex-shrink: 0;
+}

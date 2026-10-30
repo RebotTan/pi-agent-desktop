@@ -1275,6 +1275,8 @@ export const enLocale: LocalePlugin = {
     "i18n.plugins": "Plugins",
     "i18n.addSkill": "Add skill",
     "i18n.addPlugin": "Add plugin",
+    "i18n.pluginSearchPlaceholder": "Search npm registry for pi plugins…",
+    "i18n.noPluginsFound": "No plugins found",
     "i18n.selectSkill": "Select a skill",
     "i18n.selectPackage": "Select a package",
     "i18n.updateAvailable": "Update available",

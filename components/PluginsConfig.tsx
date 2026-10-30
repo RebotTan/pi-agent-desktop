@@ -4,6 +4,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react"
 import { sendAgentCommand } from "@/lib/agent-client";
 import type {
   PluginPackageInfo,
+  PluginSearchResult,
   PluginStandaloneExtensionInfo,
   PluginUpdateResult,
   PluginsBulkResponse,
@@ -11,6 +12,7 @@ import type {
   ProjectTrustStatus,
 } from "@/lib/api-types";
 import { useI18n } from "@/hooks/useI18n";
+import { isImeComposing } from "@/lib/ime";
 import { shortenPath } from "@/lib/display-path";
 import {
   getLastSettingsSelection,
@@ -255,6 +257,7 @@ function AddPluginPanel({
   onSourceChange,
   onScopeChange,
   onInstall,
+  onInstallFromSearch,
 }: {
   cwd: string;
   source: string;
@@ -265,60 +268,169 @@ function AddPluginPanel({
   onSourceChange: (value: string) => void;
   onScopeChange: (scope: PluginScope) => void;
   onInstall: () => void;
+  onInstallFromSearch: (npmName: string) => void;
 }) {
   const { t } = useI18n();
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<PluginSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [installingName, setInstallingName] = useState<string | null>(null);
+
+  const search = useCallback(async (q: string) => {
+    if (!q.trim()) return;
+    setSearching(true);
+    setSearchError(null);
+    setSearchResults([]);
+    try {
+      const res = await fetch("/api/plugins/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ query: q.trim() }),
+      });
+      const d = (await res.json()) as { results?: PluginSearchResult[]; error?: string };
+      if (d.error) {
+        setSearchError(d.error);
+        return;
+      }
+      setSearchResults(d.results ?? []);
+      if ((d.results ?? []).length === 0) setSearchError(t("i18n.noPluginsFound"));
+    } catch (e) {
+      setSearchError(String(e));
+    } finally {
+      setSearching(false);
+    }
+  }, [t]);
+
+  const installResult = useCallback((npmName: string) => {
+    setInstallingName(npmName);
+    onInstallFromSearch(npmName);
+  }, [onInstallFromSearch]);
+
+  // Clear installing state when the parent finishes (busy goes false).
+  useEffect(() => {
+    if (!busy && installingName) setInstallingName(null);
+  }, [busy, installingName]);
 
   return (
-    <ConfigAddSourcePanel
-      title={t("i18n.addPlugin")}
-      catalogs={[{
-        href: "https://pi.dev/packages",
-        label: "pi.dev/packages",
-        icon: (
-          <svg width="28" height="28" viewBox="0 0 800 800" aria-hidden="true" focusable="false">
-            <path
-              fill="#000"
-              fillRule="evenodd"
-              d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"
-            />
-            <path fill="#000" d="M517.36 400H634.72V634.72H517.36Z" />
-          </svg>
-        ),
-      }]}
-      target={
-        <ConfigSaveTarget
-          value={scope}
-          label={t("config.saveTo")}
-          options={[
-            { value: "global", label: scopeLabel("global", t) },
-            { value: "project", label: scopeLabel("project", t), disabled: !projectResourcesLoaded },
-          ]}
-          path={installLocation(scope, cwd)}
-          disabledReason={t("trust.projectScopeUnavailable")}
-          onChange={onScopeChange}
-        />
-      }
-      inputLabel={t("config.source")}
-      inputId="plugin-source"
-      placeholder="npm:@scope/package"
-      value={source}
-      canSubmit={!busy && Boolean(source.trim())}
-      normalizeValue={normalizePluginSourceInput}
-      onValueChange={onSourceChange}
-      onSubmit={onInstall}
-      examplesLabel={t("config.examples")}
-      examples={PLUGIN_SOURCE_EXAMPLES}
-      error={actionError}
-    >
-      <ConfigButton
-        variant="primary"
-        onClick={onInstall}
-        disabled={busy || !source.trim()}
-        className="is-pushed-right"
+    <ConfigDetailStack className="is-full-height">
+      <ConfigAddSourcePanel
+        title={t("i18n.addPlugin")}
+        catalogs={[{
+          href: "https://pi.dev/packages",
+          label: "pi.dev/packages",
+          icon: (
+            <svg width="28" height="28" viewBox="0 0 800 800" aria-hidden="true" focusable="false">
+              <path
+                fill="#000"
+                fillRule="evenodd"
+                d="M165.29 165.29H517.36V400H400V517.36H282.65V634.72H165.29ZM282.65 282.65V400H400V282.65Z"
+              />
+              <path fill="#000" d="M517.36 400H634.72V634.72H517.36Z" />
+            </svg>
+          ),
+        }]}
+        target={
+          <ConfigSaveTarget
+            value={scope}
+            label={t("config.saveTo")}
+            options={[
+              { value: "global", label: scopeLabel("global", t) },
+              { value: "project", label: scopeLabel("project", t), disabled: !projectResourcesLoaded },
+            ]}
+            path={installLocation(scope, cwd)}
+            disabledReason={t("trust.projectScopeUnavailable")}
+            onChange={onScopeChange}
+          />
+        }
+        inputLabel={t("config.source")}
+        inputId="plugin-source"
+        placeholder="npm:@scope/package"
+        value={source}
+        canSubmit={!busy && Boolean(source.trim())}
+        normalizeValue={normalizePluginSourceInput}
+        onValueChange={onSourceChange}
+        onSubmit={onInstall}
+        examplesLabel={t("config.examples")}
+        examples={PLUGIN_SOURCE_EXAMPLES}
+        error={actionError}
       >
-        {busy ? t("i18n.installing") : t("i18n.install")}
-      </ConfigButton>
-    </ConfigAddSourcePanel>
+        <ConfigButton
+          variant="primary"
+          onClick={onInstall}
+          disabled={busy || !source.trim()}
+          className="is-pushed-right"
+        >
+          {busy ? t("i18n.installing") : t("i18n.install")}
+        </ConfigButton>
+      </ConfigAddSourcePanel>
+
+      {/* ── Marketplace search ── */}
+      <div className="plugin-marketplace-search">
+        <div className="plugin-marketplace-search-row">
+          <input
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !isImeComposing(e)) search(searchQuery);
+            }}
+            placeholder={t("i18n.pluginSearchPlaceholder")}
+            className="plugin-marketplace-input"
+          />
+          <ConfigButton
+            variant="primary"
+            onClick={() => search(searchQuery)}
+            disabled={searching || !searchQuery.trim()}
+          >
+            {searching ? t("i18n.searching") : t("i18n.search")}
+          </ConfigButton>
+        </div>
+        {searchError && (
+          <div className="plugin-marketplace-error">{searchError}</div>
+        )}
+        {searchResults.length > 0 && (
+          <div className="plugin-marketplace-results">
+            {searchResults.map((r) => {
+              const isInstalling = installingName === r.name;
+              return (
+                <div key={r.name} className="plugin-marketplace-result">
+                  <div className="plugin-marketplace-result-info">
+                    <div className="plugin-marketplace-result-name">{r.name}</div>
+                    <div className="plugin-marketplace-result-meta">
+                      {r.description && (
+                        <span className="plugin-marketplace-result-desc">{r.description}</span>
+                      )}
+                      {r.weeklyDownloads && (
+                        <span className="plugin-marketplace-result-downloads">{r.weeklyDownloads}</span>
+                      )}
+                      {r.version && (
+                        <span className="plugin-marketplace-result-version">v{r.version}</span>
+                      )}
+                      <a
+                        href={r.npmUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="plugin-marketplace-result-link"
+                      >
+                        npm ↗
+                      </a>
+                    </div>
+                  </div>
+                  <ConfigButton
+                    size="small"
+                    onClick={() => !busy && !isInstalling && installResult(r.name)}
+                    disabled={busy || isInstalling}
+                    className="plugin-marketplace-result-install"
+                  >
+                    {isInstalling ? t("i18n.installing") : t("i18n.install")}
+                  </ConfigButton>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </ConfigDetailStack>
   );
 }
 
@@ -834,8 +946,9 @@ export function PluginsConfig({
     }
   }, [cwd, sessionId, t]);
 
-  const installPlugin = useCallback(async () => {
-    const source = normalizePluginSourceInput(installSource).trim();
+  const installPlugin = useCallback(async (sourceOverride?: string) => {
+    const raw = sourceOverride ?? installSource;
+    const source = normalizePluginSourceInput(raw).trim();
     if (!source) return;
     setInstallSource(source);
     const key = `${installScope}\0${source}`;
@@ -863,6 +976,35 @@ export function PluginsConfig({
       setBusyKey(null);
     }
   }, [cwd, installScope, installSource, t]);
+
+  const installFromSearch = useCallback(async (npmName: string) => {
+    const source = `npm:${npmName}`;
+    setInstallSource(source);
+    setAddMode(false);
+    setActionError(null);
+    setActionMessage(null);
+    setGroupStatus(null);
+    const key = `${installScope}\0${source}`;
+    setBusyKey(`install:${key}`);
+    try {
+      const res = await fetch("/api/plugins", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "install", source, scope: installScope, cwd }),
+      });
+      const next = (await res.json()) as PluginsResponse & { error?: string };
+      if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
+      setData(next);
+      const installed = findInstalledPackage(next.packages, source, installScope);
+      setSelected(installed ? packageKey(installed) : key);
+      setInstallSource("");
+      setActionMessage(t("i18n.packageInstalled"));
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusyKey(null);
+    }
+  }, [cwd, installScope, t]);
 
   const reloadSession = useCallback(async () => {
     if (!sessionId) return;
@@ -1017,6 +1159,7 @@ export function PluginsConfig({
                 onSourceChange={setInstallSource}
                 onScopeChange={setInstallScope}
                 onInstall={installPlugin}
+                onInstallFromSearch={installFromSearch}
               />
             ) : loading ? null : selectedExtension ? (
               <StandaloneExtensionDetail extension={selectedExtension} />
