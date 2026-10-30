@@ -1,5 +1,15 @@
 # @agegr/pi-web
 
+## 0.10.9
+
+### Patch Changes
+
+- [`91781bd`](https://github.com/RebotTan/pi-agent-desktop/commit/91781bd) Thanks [@tanjianwd](https://github.com/tanjianwd)! - feat(plugins): marketplace search for pi packages on npm registry (PR-0022)
+
+- [`57df7bc`](https://github.com/RebotTan/pi-agent-desktop/commit/57df7bc) Thanks [@tanjianwd](https://github.com/tanjianwd)! - merge: sync upstream abcwyc/pi-agent-desktop (18 commits) — terminal preferences, in-conversation find, GitHub alerts, front matter, neutral theme, menu placement
+
+- [`a714edd`](https://github.com/RebotTan/pi-agent-desktop/commit/a714edd) Thanks [@tanjianwd](https://github.com/tanjianwd)! - fix(theme): close the CSS block broken by the merge and drop the stale sed backup
+
 ## 0.10.8
 
 ### Patch Changes

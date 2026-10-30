@@ -4,7 +4,7 @@
     "reason": "Upgrade the bundled SDK to pi 1.4.0; typecheck, the unit suite and packaged Code mode (desktop:verify) pass with no source changes needed."
   },
   "pi-web": {
-    "version": "0.10.8",
+    "version": "0.10.9",
     "reason": "Fork pi-web at 0.10.1 (changesets release); upstream agegr/pi-web has moved to 0.12.2 but this fork tracks its own version line. The root package.json doubles as this fork version, so the pin follows the changesets bump."
   }
 }
