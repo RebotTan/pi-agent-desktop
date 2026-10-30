@@ -32,3 +32,8 @@ export function removePackageSource(
   const next = packages.filter((entry) => getPackageSourceString(entry) !== source);
   return next.length === packages.length ? null : next;
 }
+
+/** packages 里是否已经配置了这个 source（按原文比较，不看 scope）。 */
+export function hasPackageSource(packages: readonly PackageSource[], source: string): boolean {
+  return packages.some((entry) => getPackageSourceString(entry) === source);
+}

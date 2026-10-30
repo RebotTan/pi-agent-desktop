@@ -14,7 +14,7 @@ import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security"
 import { getProjectTrustStatus } from "@/lib/project-trust";
 import { isPluginSourceCheckable } from "@/lib/plugin-updates";
 import { readPluginUiCards } from "@/lib/plugin-ui";
-import { getPackageSourceString, removePackageSource } from "@/lib/plugin-settings";
+import { getPackageSourceString, hasPackageSource, removePackageSource } from "@/lib/plugin-settings";
 import type {
   PluginDiagnostic,
   PluginPackageInfo,
@@ -66,6 +66,33 @@ async function dropConfiguredPackageSource(
   if (scope === "project") settingsManager.setProjectPackages(next);
   else settingsManager.setPackages(next);
   await settingsManager.flush();
+}
+
+/**
+ * 更新插件。
+ *
+ * 本地路径包没有远端可拉，但 SDK 的 `update` 会先算 identity：带 scope 时用
+ * agentDir 解析相对路径、不带 scope 时用 cwd（`getPackageIdentity(source)`），
+ * 两边不一致就报「没有匹配的包」。settings 里确实有这条时当作已是最新，
+ * 不把 500 抛给用户；真的不存在的 source 照常抛。
+ */
+async function updatePackage(
+  packageManager: DefaultPackageManager,
+  settingsManager: SettingsManager,
+  source: string | undefined,
+): Promise<void> {
+  try {
+    await packageManager.update(source);
+  } catch (error) {
+    if (!source || !hasConfiguredPackageSource(settingsManager, source)) throw error;
+  }
+}
+
+function hasConfiguredPackageSource(settingsManager: SettingsManager, source: string): boolean {
+  return (
+    hasPackageSource(settingsManager.getGlobalSettings().packages ?? [], source) ||
+    hasPackageSource(settingsManager.getProjectSettings().packages ?? [], source)
+  );
 }
 
 function isDisabledPackage(entry: PackageSource): boolean {
@@ -525,7 +552,7 @@ export async function POST(req: Request) {
           { status: 403 },
         );
       }
-      await packageManager.update(source);
+      await updatePackage(packageManager, settingsManager, source);
     } else if (body.action === "disable") {
       if (!source) return NextResponse.json({ error: "source required" }, { status: 400 });
       setPackagesDisabled(settingsManager, [source], scope, true);
