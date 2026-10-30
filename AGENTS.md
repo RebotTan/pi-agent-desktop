@@ -36,6 +36,12 @@ Typecheck: `node_modules/.bin/tsc --noEmit` · Lint: `npm run lint`
 - A worktree's `node_modules` can lag the lockfile (created before an SDK bump), which
   fails tests that pin newer SDK behaviour. `npm test` runs `npm run check:deps` first and
   stops with the mismatched packages; `npm ci` fixes it.
+- Windows test fixtures use `scripts/test-platform.mjs`: directory links are junctions,
+  unavailable file links skip only their own subtests, and POSIX mode checks remain
+  active on POSIX hosts. Shell-command fixtures select native Git Bash inside the
+  test process; trust fixtures must not inherit the user's ancestor skills. Await
+  session shutdown before deleting MCP working directories. Real PTY integration
+  runs in a child process; fake-clock tests use a controlled PTY.
 - **`next dev` rewrites `AGENTS.md`**: it appends a "This is NOT the Next.js you know" block
   to this file on every start. Preserve the project and user instructions here; review generated
   additions separately and never reset the entire file to discard development output.
