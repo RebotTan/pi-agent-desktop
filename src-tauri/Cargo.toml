@@ -1,6 +1,6 @@
 [package]
 name = "pid"
-version = "0.10.9"
+version = "0.10.10"
 description = "Desktop shell for PiD"
 authors = ["pid contributors"]
 license = "MIT"
