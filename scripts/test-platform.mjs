@@ -41,7 +41,13 @@ export async function fixtureDir(prefix) {
   const relativeToHome = relative(resolve(homedir()), temp);
   const inProfile = !relativeToHome.startsWith("..") && !isAbsolute(relativeToHome);
   // Ancestor-scanning trust tests must not inherit the developer's ~/.agents/skills.
-  const base = inProfile ? resolve("test-results", "fixtures") : temp;
+  // Windows keeps TEMP under the user profile, so this used to fall back to
+  // `test-results/fixtures` inside the checkout — whose own .agents/skills (a fork
+  // addition) made every ancestor scan look trust-relevant. Public sits on the same
+  // volume but outside every user profile and outside the repo tree.
+  const base = inProfile
+    ? resolve(process.env.SystemDrive ?? "C:", "Users", "Public", "pi-web-test-fixtures")
+    : temp;
   await mkdir(base, { recursive: true });
   return mkdtemp(join(base, prefix));
 }
