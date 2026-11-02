@@ -10609,6 +10609,17 @@ html.dark .msg-rail-track {
   .tool-policy-button {
     height: 40px;
   }
+
+  /* Artifacts 页面用行内链接按钮表达「显示进程文件」，17px 高在拇指下点不中。 */
+  .artifacts-link-button {
+    min-height: 32px;
+    padding: 0 4px;
+  }
+
+  /* 侧边栏抽屉里的行（New Session / Scheduled / Artifacts）是手机上的主要入口。 */
+  .sidebar-header-row {
+    height: 44px;
+  }
 }
 
 /* === 0022 · Plugin marketplace search === */
