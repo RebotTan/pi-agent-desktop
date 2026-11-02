@@ -1,5 +1,11 @@
 # @agegr/pi-web
 
+## 0.10.12
+
+### Patch Changes
+
+- [`684f582`](https://github.com/RebotTan/pi-agent-desktop/commit/684f582213dd106bb160873d63c970805de51dbc) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Read `latest.json` from the release assets for the update check instead of GitHub's REST API, and surface a failed check instead of showing the last cached version as current.
+
 ## 0.10.11
 
 ### Patch Changes
