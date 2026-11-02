@@ -1,5 +1,15 @@
 # @agegr/pi-web
 
+## 0.10.11
+
+### Patch Changes
+
+- [`69bc8a4`](https://github.com/RebotTan/pi-agent-desktop/commit/69bc8a41163825dcd161e06aecfb9585833ad51c) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Merge upstream pi-web 0.8.0: the Artifacts page with a cross-session index, thumbnails, favorites and written-file outputs, the inline ChatShellPrompt flow, desktop webview recovery and single-instance handoff, and a denser inline-style token pass. The macOS cache purge no longer clears WebView website data, so Settings switches, sidebar state and drafts survive an upgrade.
+
+- [`73c4a12`](https://github.com/RebotTan/pi-agent-desktop/commit/73c4a1296770f51863455b2c57a2252895400010) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Enlarge the touch targets the upstream Artifacts page brought to phones: the sidebar drawer rows (New Session, Scheduled, Artifacts) go from 30px to 44px and the inline "show process files" link from 17px to 32px. Desktop sizes are unchanged.
+
+- [`66a2492`](https://github.com/RebotTan/pi-agent-desktop/commit/66a24923c6540f22c706afdf8f3f312ee19da780) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Place test fixtures outside the checkout so the project-trust suite stops inheriting this repository's own `.agents/skills`, and stop pinning one platform's rendering in the artifact file-output test.
+
 ## 0.10.10
 
 ### Patch Changes
