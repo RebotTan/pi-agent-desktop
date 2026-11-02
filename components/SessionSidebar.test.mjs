@@ -162,13 +162,24 @@ test("Chats show five families at a time even when there are no projects", () =>
 
 test("Chats fold like a project and unfold back to the first five", () => {
   // Folding drops the extra pages so the next unfold starts at five again.
-  assert.match(source, /const setChatsFolded = \(folded: boolean\) => \{\s*setChatsCollapsed\(folded\);\s*if \(folded\) setChatSessionPages\(0\);/);
+  assert.match(source, /const setChatsFolded = \(folded: boolean\) => \{\s*writeChatsCollapsed\(folded\);\s*if \(folded\) setChatSessionPages\(0\);/);
   // A search lists every match regardless of the fold.
   assert.match(source, /const chatsFolded = !trimmedSessionQuery && chatsCollapsed/);
   assert.match(source, /\{!chatsFolded && \(\s*<div className="sidebar-project-tree-children sidebar-chats-list">/);
   // The fold and the page count survive a reload.
   assert.match(source, /APP_PREF_KEYS\.collapsedChats/);
   assert.match(source, /APP_PREF_KEYS\.chatSessionPages/);
+});
+
+test("the Chats fold hydrates with the server value before reading localStorage", () => {
+  // Reading the pref in a useState initializer rendered the header collapsed on
+  // the client but expanded on the server, a hydration mismatch.
+  assert.doesNotMatch(source, /useState\(\(\) => getPref\(APP_PREF_KEYS\.collapsedChats\)/);
+  assert.match(source, /const chatsCollapsed = useSyncExternalStore\(subscribeChatsCollapsed, readChatsCollapsed, serverChatsCollapsed\)/);
+  assert.match(source, /const serverChatsCollapsed = \(\) => false;/);
+  // The pref is written by the setter, never by an effect that could store the
+  // server value over the saved one on the first commit.
+  assert.doesNotMatch(source, /if \(chatsCollapsed\) setPref\(APP_PREF_KEYS\.collapsedChats/);
 });
 
 test("the Chats header shows its menu and add buttons only on hover, like Projects", () => {

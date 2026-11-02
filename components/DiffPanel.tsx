@@ -70,7 +70,7 @@ export function DiffPanel({ cwd, selectedFilePath, refreshKey = 0, onOpenFile }:
           <span>{status ? t("files.changeStats", { count: files.length, additions: status.additions, deletions: status.deletions }) : t("contextPanel.diffHint")}</span>
         </div>
         <button type="button" className="context-diff-refresh" onClick={() => void loadStatus()} disabled={loading} title={t("contextPanel.diffRefresh")} aria-label={t("contextPanel.diffRefresh")}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
             <path d="M20 11a8 8 0 1 0 2 5.3" />
             <path d="M20 4v7h-7" />
           </svg>

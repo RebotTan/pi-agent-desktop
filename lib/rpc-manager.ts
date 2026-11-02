@@ -7,6 +7,7 @@ import { resolve } from "path";
 import { validateAgentImages } from "./image-attachments";
 import { getEngine, type SessionStartResult } from "./agent-engine";
 import { getPluginRegistry } from "./plugin-registry";
+import { userImageDisplayText, userMessageImageCount } from "./user-image-display";
 import { invalidateModelsCache } from "./models-cache";
 import { resolveVisibleModels, selectInitialModelScope } from "./model-scope";
 import {
@@ -2480,7 +2481,9 @@ export function getRpcSessionInfos(options: { includeTransient?: boolean } = {})
       created,
       modified: new Date(lastActivityMs).toISOString(),
       messageCount: messages.length,
-      firstMessage: (firstUserMessage ? runtimeMessageText(firstUserMessage) : pendingPrompt?.text) || "(no messages)",
+      firstMessage: (firstUserMessage
+        ? userImageDisplayText(runtimeMessageText(firstUserMessage), userMessageImageCount("content" in firstUserMessage.message ? firstUserMessage.message.content : undefined))
+        : pendingPrompt?.text) || "(no messages)",
       ...(subagent ? {
         parentSessionId: subagent.parentSessionId,
         relation: {
@@ -2728,10 +2731,7 @@ export async function startRpcSession(
                 createArtifactGuideExtension(),
                 // A chat with a folder saves into it; only a legacy chat still saves to Downloads.
                 ...(chatGrants && !chatFolder
-                  ? [createChatDownloadsExtension({
-                      grants: chatGrants,
-                      confirmBeforeSaving: () => readChatSettings().confirmSave,
-                    })]
+                  ? [createChatDownloadsExtension({ grants: chatGrants })]
                   : []),
                 createChatWorkspaceExtension({
                   getSkills: () => chatSessionRef.current?.resourceLoader.getSkills().skills ?? [],

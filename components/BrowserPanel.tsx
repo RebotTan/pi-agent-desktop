@@ -14,7 +14,7 @@ function normalizeUrl(value: string): string {
 function BrowserIcon({ type }: { type: "back" | "forward" | "reload" | "external" }) {
   if (type === "reload") {
     return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="M20 11a8 8 0 1 0 2 5.3" />
         <path d="M20 4v7h-7" />
       </svg>
@@ -22,7 +22,7 @@ function BrowserIcon({ type }: { type: "back" | "forward" | "reload" | "external
   }
   if (type === "external") {
     return (
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="M14 3h7v7" />
         <path d="M10 14 21 3" />
         <path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5" />
@@ -30,7 +30,7 @@ function BrowserIcon({ type }: { type: "back" | "forward" | "reload" | "external
     );
   }
   return (
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       <polyline points={type === "back" ? "15 18 9 12 15 6" : "9 18 15 12 9 6"} />
     </svg>
   );
@@ -108,7 +108,7 @@ export function BrowserPanel() {
       ) : (
         <div className="context-browser-empty" role="status">
           <span className="context-browser-empty-icon" aria-hidden="true">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
               <circle cx="12" cy="12" r="9" />
               <path d="M3 12h18M12 3c2.2 2.4 3.3 5.4 3.3 9s-1.1 6.6-3.3 9c-2.2-2.4-3.3-5.4-3.3-9S9.8 5.4 12 3Z" />
             </svg>

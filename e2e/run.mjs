@@ -342,7 +342,12 @@ try {
       // Absolute indexes then change, and scroll events report intermediate
       // turns. Check the destination relative to the unchanged history tail.
       const questionIndex = 5000 - (distanceFromEnd + 1) * 2;
-      assert.equal(await preview.innerText(), `${text(questionIndex)}\n${text(questionIndex + 1)}`);
+      // The card also carries a usage hint line, so compare the question and answer only.
+      const previewText = await preview.evaluate((card) => [
+        card.querySelector(".conversation-navigator-question")?.innerText,
+        card.querySelector(".conversation-navigator-answer")?.innerText,
+      ].join("\n"));
+      assert.equal(previewText, `${text(questionIndex)}\n${text(questionIndex + 1)}`);
       await navigator.evaluate(async (track, distance) => {
         const scrollport = document.querySelector(".chat-scroll-container");
         let previousTop = scrollport.scrollTop;

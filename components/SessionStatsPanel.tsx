@@ -70,7 +70,7 @@ export function SessionStatsPanel({ sessionStats, contextUsage, isMobile }: Sess
           compact = false,
         ) => (
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{title}</div>
+              <div style={{ fontSize: "var(--fs-micro)", fontWeight: "var(--fw-bold)", color: "var(--text)", marginBottom: 6 }}>{title}</div>
               <div style={{
                 display: "grid",
                 gridTemplateColumns: compact ? "max-content max-content" : "auto minmax(0, 1fr)",
@@ -111,10 +111,10 @@ export function SessionStatsPanel({ sessionStats, contextUsage, isMobile }: Sess
                 color: copied ? "var(--accent)" : "var(--text-dim)",
                 background: "transparent",
                 border: "var(--hairline) solid var(--border)",
-                borderRadius: 4,
+                borderRadius: "var(--radius-xs)",
                 cursor: "pointer",
                 flex: "0 0 auto",
-                transition: "color 0.12s, border-color 0.12s, background 0.12s",
+                transition: "color var(--dur-fast) var(--ease-native), border-color var(--dur-fast) var(--ease-native), background var(--dur-fast) var(--ease-native)",
               }}
               onMouseEnter={(e) => {
                 e.currentTarget.style.color = "var(--accent)";
@@ -142,7 +142,7 @@ export function SessionStatsPanel({ sessionStats, contextUsage, isMobile }: Sess
         };
         const sessionInfoSection = (
           <div style={{ minWidth: 0 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--text)", marginBottom: 6 }}>{translate("session.infoSection")}</div>
+            <div style={{ fontSize: "var(--fs-micro)", fontWeight: "var(--fw-bold)", color: "var(--text)", marginBottom: 6 }}>{translate("session.infoSection")}</div>
             <div style={{ display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", columnGap: 12, rowGap: 8, alignItems: "start" }}>
               {sessionRows.map((row) => (
                 <div key={`session-info:${row.label}`} style={{ display: "contents" }}>
@@ -168,7 +168,7 @@ export function SessionStatsPanel({ sessionStats, contextUsage, isMobile }: Sess
               ? "1fr"
               : "minmax(360px, 1.7fr) minmax(140px, 0.55fr) minmax(190px, 0.75fr)",
             gap: isMobile ? 16 : 24,
-            fontSize: 12,
+            fontSize: "var(--fs-caption)",
             lineHeight: 1.5,
             fontFamily: "var(--font-mono)",
           }}>
@@ -178,7 +178,7 @@ export function SessionStatsPanel({ sessionStats, contextUsage, isMobile }: Sess
           </div>
         );
       })() : (
-        <div style={{ fontSize: 12, color: "var(--text-muted)", fontStyle: "italic" }}>
+        <div style={{ fontSize: "var(--fs-caption)", color: "var(--text-muted)", fontStyle: "italic" }}>
           {translate("session.load")}
         </div>
       )}
