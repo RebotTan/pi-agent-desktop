@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { existsSync, readdirSync, readFileSync, statSync, unlinkSync, writeFileSync } from "fs";
+import { existsSync, readdirSync, readFileSync, statSync, unlinkSync } from "fs";
 import { dirname, join } from "path";
 import {
   attachSessionProjectInfo,
@@ -29,6 +29,7 @@ import { isChatFolderPath } from "@/lib/chat-workspace";
 import { samePath } from "@/lib/paths";
 import { moveFolderToTrash } from "@/lib/trash";
 import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
+import { replaceFileAtomicSync } from "@/lib/atomic-file";
 
 export async function GET(
   req: Request,
@@ -359,7 +360,7 @@ export async function DELETE(
                 break;
               }
             }
-            writeFileSync(childPath, lines.join("\n"));
+            replaceFileAtomicSync(childPath, lines.join("\n"));
           }
         } catch { /* skip malformed */ }
       }
