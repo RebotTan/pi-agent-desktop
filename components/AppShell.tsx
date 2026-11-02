@@ -108,6 +108,8 @@ import type { FileViewerState } from "@/lib/file-viewer-state";
 import type { ToolEntry } from "@/lib/tool-presets";
 import { getSessionFamily } from "@/lib/session-family";
 import { getLastSettingsSection, type SettingsSection } from "@/lib/settings-navigation";
+import { archivedProjectRootFor, restoreProjectRoot } from "@/lib/archived-projects";
+import { getProjectDisplayName } from "@/lib/project-display";
 
 type SessionCopyField = "file" | "id" | "projectDir" | "gitBranch" | "gitWorktree";
 /** A page covering the chat area, named by `?view=`. */
@@ -1218,6 +1220,16 @@ export function AppShell() {
     ));
   }, []);
 
+  // The keyboard shortcut and the app menu start a session in the active cwd,
+  // which is an archived project while one of its sessions is open. Those stay
+  // readable; a new one waits until the project is restored (sidebar rule).
+  const blockArchivedNewSession = useCallback((cwd: string): boolean => {
+    const root = archivedProjectRootFor(cwd, sessionCatalog);
+    if (!root) return false;
+    appNotify.info({ message: translate("sidebar.projectArchivedNewSession", { name: getProjectDisplayName(root, [root]) }) });
+    return true;
+  }, [sessionCatalog, translate]);
+
   const handleProjectChangeFromComposer = useCallback((projectRoot: string) => {
     if (selectedSession || isChatWorkspaceActive) return;
     handleNewSession(`project-${Date.now()}`, projectRoot, "project");
@@ -1227,16 +1239,20 @@ export function AppShell() {
     if (!desktopMode || isChatWorkspaceActive) return;
     try {
       const cwd = await selectProjectDirectoryNative(projectPickerStartCwd, "");
-      if (cwd) handleNewSession(`project-${Date.now()}`, cwd, "project");
+      if (!cwd) return;
+      // Picking a folder is the explicit "add project" gesture: it restores an archived one.
+      const archivedRoot = archivedProjectRootFor(cwd, sessionCatalog);
+      if (archivedRoot) restoreProjectRoot(archivedRoot);
+      handleNewSession(`project-${Date.now()}`, cwd, "project");
     } catch (error) {
       console.error("Failed to switch project:", error);
     }
-  }, [desktopMode, handleNewSession, isChatWorkspaceActive, projectPickerStartCwd]);
+  }, [desktopMode, handleNewSession, isChatWorkspaceActive, projectPickerStartCwd, sessionCatalog]);
 
   const handleNativeMenuAction = useCallback((payload: string) => {
     if (payload === "new-session") {
       const cwd = isChatWorkspaceActive ? chatWorkspaceCwd : activeCwd;
-      if (cwd) {
+      if (cwd && (isChatWorkspaceActive || !blockArchivedNewSession(cwd))) {
         handleNewSession(
           `native-menu-${Date.now()}`,
           cwd,
@@ -1250,7 +1266,7 @@ export function AppShell() {
       setTopMoreOpen(false);
       setSettingsSection(payload === "settings-general" ? "general" : "models");
     }
-  }, [activeCwd, chatWorkspaceCwd, handleNewSession, isChatWorkspaceActive]);
+  }, [activeCwd, blockArchivedNewSession, chatWorkspaceCwd, handleNewSession, isChatWorkspaceActive]);
 
   const openSettingsAtLastSection = useCallback(() => {
     setActiveTopPanel(null);
@@ -1279,11 +1295,14 @@ export function AppShell() {
   useGlobalKeyboardShortcuts({
     onNewSession: settingsSection || shortcutHelpOpen
       ? undefined
-      : (cwd: string) => handleNewSession(
-        `kb-${Date.now()}`,
-        cwd,
-        isChatWorkspaceActive ? "chat" : "project",
-      ),
+      : (cwd: string) => {
+        if (!isChatWorkspaceActive && blockArchivedNewSession(cwd)) return;
+        handleNewSession(
+          `kb-${Date.now()}`,
+          cwd,
+          isChatWorkspaceActive ? "chat" : "project",
+        );
+      },
     activeCwd: isChatWorkspaceActive ? chatWorkspaceCwd : activeCwd,
     // Only while open: a closed panel must leave \ and focus alone.
     onCloseRightPanel: rightPanelOpen && !shortcutHelpOpen ? handleRightPanelClose : undefined,
