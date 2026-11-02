@@ -15,11 +15,13 @@ export interface AppUpdateProject {
   currentVersion: string;
 }
 
-interface GitHubRelease {
-  tag_name?: unknown;
-  html_url?: unknown;
-  draft?: unknown;
-  prerelease?: unknown;
+/** The manifest tauri-action writes next to the installers, and the same file the
+ * updater plugin reads. Fetching it costs a plain asset download instead of a REST
+ * request, which is what kept the update check hitting GitHub's unauthenticated
+ * 60-per-hour limit. */
+interface LatestJson {
+  version?: unknown;
+  pub_date?: unknown;
 }
 
 interface ParsedVersion {
@@ -127,22 +129,16 @@ function unpublishedRelease(project: AppUpdateProject): AppComponentReleaseInfo 
   };
 }
 
-function parseRelease(project: AppUpdateProject, raw: GitHubRelease): AppComponentReleaseInfo {
-  if (raw.draft === true || raw.prerelease === true) {
-    throw new Error("GitHub returned a non-stable latest release.");
-  }
-  if (typeof raw.tag_name !== "string" || typeof raw.html_url !== "string") {
-    throw new Error("GitHub returned an invalid release payload.");
-  }
+/** The tag a release page lives at. The manifest carries only the version, and the
+ * tags this project publishes are always `v<version>`. */
+export function releasePageUrl(project: AppUpdateProject, version: string): string {
+  return `https://github.com/${project.repository}/releases/tag/v${version}`;
+}
 
-  const latest = parseVersion(raw.tag_name);
+function parseLatestJson(project: AppUpdateProject, raw: LatestJson): AppComponentReleaseInfo {
+  const latest = typeof raw.version === "string" ? parseVersion(raw.version) : null;
   const current = parseVersion(project.currentVersion);
-  if (!latest || !current) throw new Error("GitHub returned an invalid release version.");
-
-  const releaseUrl = new URL(raw.html_url);
-  if (releaseUrl.protocol !== "https:" || releaseUrl.hostname !== "github.com") {
-    throw new Error("GitHub returned an invalid release URL.");
-  }
+  if (!latest || !current) throw new Error("The updater manifest has an invalid version.");
 
   return {
     project: project.id,
@@ -151,7 +147,7 @@ function parseRelease(project: AppUpdateProject, raw: GitHubRelease): AppCompone
     repositoryUrl: repositoryUrl(project),
     currentVersion: current.display,
     latestVersion: latest.display,
-    releaseUrl: releaseUrl.toString(),
+    releaseUrl: releasePageUrl(project, latest.display),
     updateAvailable: compareAppVersions(latest.display, current.display) > 0,
     releaseStatus: "available",
   };
@@ -163,20 +159,19 @@ export async function getLatestAppRelease(
 ): Promise<AppComponentReleaseInfo> {
   const fetcher = options.fetcher ?? fetch;
   const response = await fetcher(
-    `https://api.github.com/repos/${project.repository}/releases/latest`,
+    `https://github.com/${project.repository}/releases/latest/download/latest.json`,
     {
       cache: "no-store",
       headers: {
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
+        Accept: "application/json",
         "User-Agent": `pid/${APP_VERSION}`,
       },
       signal: AbortSignal.timeout(options.timeoutMs ?? 15_000),
     },
   );
   if (response.status === 404) return unpublishedRelease(project);
-  if (!response.ok) throw new Error(`GitHub request failed with HTTP ${response.status}.`);
-  return parseRelease(project, await response.json() as GitHubRelease);
+  if (!response.ok) throw new Error(`Updater manifest request failed with HTTP ${response.status}.`);
+  return parseLatestJson(project, await response.json() as LatestJson);
 }
 
 export async function checkAppUpdate(

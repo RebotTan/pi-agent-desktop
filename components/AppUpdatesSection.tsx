@@ -42,7 +42,10 @@ export function AppUpdatesSection({ onBusyChange }: Props) {
       })
       .then((data) => {
         setComponents(Array.isArray(data.components) ? data.components : []);
-        setLoadError(null);
+        // A failed check still answers 200 and fills `components` from the last
+        // successful run, so keying off `response.ok` alone showed week-old data as
+        // today's answer — 0.10.11 was released while this kept reporting 0.10.10.
+        setLoadError(data.errors?.length ? "checkFailed" : null);
       })
       .catch((error) => {
         if (error instanceof DOMException && error.name === "AbortError") return;
