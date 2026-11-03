@@ -102,19 +102,6 @@ export class SidecarEngine<H extends SessionHandle = AgentSessionWrapper> implem
     return this.target.closingSessionWait(sessionId, deadlineMs);
   }
 
-  // --- raw 注册表 ---
-  registry(): Map<string, H> {
-    return this.target.registry();
-  }
-  startLocks(): Map<string, StartLock<H>> {
-    return this.target.startLocks();
-  }
-  startingCwds(): Map<string, number> {
-    return this.target.startingCwds();
-  }
-  runningListeners(): Set<RunningSessionIdsListener> {
-    return this.target.runningListeners();
-  }
 }
 
 declare global {

@@ -98,7 +98,8 @@ async function scanSessionFileInfo(filePath: string): Promise<{
     });
 
     for await (const line of rl) {
-      const entry = JSON.parse(line);
+      let entry;
+      try { entry = JSON.parse(line); } catch { continue; }
       if (!header) {
         if (entry.type !== "session") return null;
         header = entry;

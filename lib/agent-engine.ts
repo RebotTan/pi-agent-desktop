@@ -80,15 +80,6 @@ export interface AgentEngine<H extends SessionHandle = AgentSessionWrapper> {
    */
   closingSessionWait(sessionId: string, deadlineMs: number): Promise<void> | null;
 
-  // --- raw 注册表（rpc-manager 内部访问函数过渡用，逐步收敛）---
-  /** rpc-manager 的 getRegistry() 委托目标。 */
-  registry(): Map<string, H>;
-  /** rpc-manager 的 getLocks() 委托目标。 */
-  startLocks(): Map<string, StartLock<H>>;
-  /** rpc-manager 的 getStartingSessionCwds() 委托目标。 */
-  startingCwds(): Map<string, number>;
-  /** rpc-manager 的 getRunningListeners() 委托目标。 */
-  runningListeners(): Set<RunningSessionIdsListener>;
 }
 
 /**
@@ -246,13 +237,13 @@ export class InProcessAgentEngine implements AgentEngine<AgentSessionWrapper> {
 }
 
 declare global {
-  var __piEngine: AgentEngine | undefined;
+  var __piEngine: InProcessAgentEngine | undefined;
 }
 
-let cachedEngine: AgentEngine | undefined;
+let cachedEngine: InProcessAgentEngine | undefined;
 
 /** 单例。实例常驻 globalThis.__piEngine，跨模块热重载存活。 */
-export function getEngine(): AgentEngine {
+export function getEngine(): InProcessAgentEngine {
   if (!cachedEngine) {
     cachedEngine = globalThis.__piEngine ??= new InProcessAgentEngine();
   }

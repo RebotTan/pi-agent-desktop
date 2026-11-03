@@ -405,7 +405,6 @@ export class RelayConnector {
       out[1 + CLIENT_ID_BYTES] = notPaired ? 1 : 0;
       this.socket.send(out);
     }
-    if (session.pairing) this.options.onChange?.();
     if (session.deviceId) this.log(`phone ${session.deviceId} left: ${reason}`);
     this.options.onChange?.();
   }
