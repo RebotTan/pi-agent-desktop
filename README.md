@@ -1,5 +1,6 @@
 # PiD
 
+
 **English** | [简体中文](./README.zh-CN.md)
 
 `pid` is a local AI agent desktop app for macOS and Windows. It packages the agent capabilities of [pi](https://github.com/earendil-works/pi) into a standalone, installable application.
