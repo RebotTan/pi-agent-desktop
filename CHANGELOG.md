@@ -1,5 +1,15 @@
 # @agegr/pi-web
 
+## 0.10.13
+
+### Patch Changes
+
+- [`4e67c64`](https://github.com/RebotTan/pi-agent-desktop/commit/4e67c64fc70fad85a2a00af7d1f6d988c8c2b5a3) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Merge the upstream batch B: remote access hardening (Tailscale Host-spoof fix), atomic user-data writes, `/api/files` refusing credential stores, render-error pages, project archive, session rename, Tasks time limits, idle-session byte cap, and the topbar More menu.
+
+- [`132f222`](https://github.com/RebotTan/pi-agent-desktop/commit/132f222fe3ca05672e2e0b9ba49d81b82ddaf433) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Merge the upstream relay batch A: an end-to-end encrypted relay (Noise IK/IKpsk2 on WebCrypto) so a phone can drive this computer from anywhere, the phone shell and its tunnel service worker, Settings › General › Remote relay with QR pairing, and the relay's own server plus hardening from three review rounds.
+
+- [`302eda6`](https://github.com/RebotTan/pi-agent-desktop/commit/302eda67185f6c78f5cd3c36f935d2e394a3cbb5) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Upgrade the bundled pi SDK to 1.5.0. `pi-ai` no longer re-exports TypeBox, so the two tool schemas and the subagent test import `Type` from `typebox` (pinned to the 1.3.27 the SDK ships).
+
 ## 0.10.12
 
 ### Patch Changes
