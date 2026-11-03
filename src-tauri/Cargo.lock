@@ -2825,7 +2825,7 @@ dependencies = [
 
 [[package]]
 name = "pid"
-version = "0.10.12"
+version = "0.10.13"
 dependencies = [
  "dunce",
  "getrandom 0.3.4",
