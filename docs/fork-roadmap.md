@@ -6,7 +6,7 @@
 
 ---
 
-## 一、已交付（第一轮 + 第二轮，v0.10.2 及以后）
+## 一、已交付（截至 v0.10.13）
 
 ### 1. 进程抽象层 —— AgentEngine 接口
 
@@ -189,14 +189,101 @@ PR-1/PR-2 把会话运行时状态收进 `AgentEngine` 接口。骨架版 `Sidec
 
 市场搜索打 `https://registry.npmjs.org/-/v1/search`，查询串始终带 `keywords:pi-package`（不带时 314632 条垃圾，带上 13021 条真 pi 插件）。安装走 pi SDK 的 `DefaultPackageManager.installAndPersist` —— 装完下次会话 `resolve()` 自动发现 `extensions/skills/prompts/themes`，「安装即同步可用」这条链 SDK 本来就通，缺的只是发现。
 
-UI 卡片是声明式的：包在 `package.json` 的 `pi.ui` 数组里写 `{id, kind: "status-card", title, body?, href?}`，Plugins 详情页渲染成纯文本卡 + 外链。选声明式而非「插件跑代码注册 React 组件」，理由与 #15 真隔离同一个：跨进程组件、iframe 沙箱、样式隔离、生命周期四件高危事项，先证明链路走得通。校验规则：只认 `status-card`、`href` 白名单仅 http/https（`javascript:` 丢弃但保留卡片）、同包重复 id 去重、单包上限 12 条；任何非法条目静默丢弃，不让一个写错的插件把 `/api/plugins` 打成 500。
+UI 卡片是声明式的：包在 `package.json` 的 `pi.ui` 数组里写 `{id, kind: "status-card", title, body?, href?}`，Plugins 详情页渲染成纯文本卡 + 外链。选声明式而非「插件跑代码注册 React 组件」，理由与 #22 真隔离同一个：跨进程组件、iframe 沙箱、样式隔离、生命周期四件高危事项，先证明链路走得通。校验规则：只认 `status-card`、`href` 白名单仅 http/https（`javascript:` 丢弃但保留卡片）、同包重复 id 去重、单包上限 12 条；任何非法条目静默丢弃，不让一个写错的插件把 `/api/plugins` 打成 500。
+
+---
+### 15. PiD 改名 + 图标
+
+| 项 | 值 |
+|---|---|
+| commit | `ce0710b`（改名）、`0.10.5` 图标改色 |
+| 文件 | 44 文件 131 处引用；`src-tauri/tauri.conf.json`、`src-tauri/pid-package.json`、`src-tauri/Cargo.toml`、`package.json`、`src-tauri/icons/*` |
+| 解锁 | 与上游 `pi-agent-desktop` 区分；安装包名 `PiD_<ver>_x64-setup.exe` |
+
+npm 包名 `pid`（无 scope）、Tauri identifier `com.rebotan.pid`、release 名 `PiD v<ver>`。**刻意保留**的三类不变量：`resources/Pi Agent Server.app`（macOS sidecar 资源目录，被 `tauri.conf` 的 `bundle.resources` 引用）、`src-tauri/src/lib.rs` 里旧安装路径探测（`Pi Agent.app` / `AppData\Local\Pi Agent`，改名会让老用户迁移失效）、`scripts/prepend-desktop.mjs` 的 Windows CI runner 工作目录前缀（repo 名未改）。
+
+图标改为**白底黑 π**（浅灰底 `#F5F5F7` + 1px 细边），与上游深青黑底区分。
+
+### 16. 上游同步（三轮，共 130 commit）
+
+| 轮次 | 上游 | 合并 commit | 内容 |
+|---|---|---|---|
+| 1 | 18 commit | `57df7bc` | 终端偏好与工作区 UI、对话内查找、聊天改进（front matter / GitHub alerts / 折叠长代码块 / 流式 markdown 稳定）、中性主题、菜单放置 |
+| 2 | 55 commit | `d901af4` | Artifacts 大改（跨会话索引 / 缩略图 / 收藏 / 列表列可调）、设计 token 清理、WebView2 `ProcessFailed` 恢复、`tauri-plugin-single-instance` |
+| 3 | 57 commit 分三批 | `4e67c64f`（B）/ `132f222f`（A）/ `302eda67`（C） | B：render error 页、项目归档、Tasks 页、批量操作、会话改名、自动命名、字节制空闲上限、侧边栏 GPU 优化；A：**Remote relay 整套**；C：pi SDK 1.5.0 |
+
+冲突固定模式（每次都一样）：`app/native-theme.css` 上游规则在前、fork 五段（0011 轨道 / 0013 审批 / 0014 移动端 / 0022 市场 / 0023 UI 卡片）在后；`package.json` 保 fork 的 `changeset`/`version`/`release:notes`；`lib/i18n/locale-plugins.ts` 保 "PiD server" 文案；`release.yml`/`Casks`/`Cargo.*`/`component-versions.json` 一律保 fork。
+
+**三个反复踩的坑**：①这些文件是 CRLF，比较行必须 `trimEnd()`，解冲突脚本不能用 `line === "======="` ②CSS 冲突交换后必数花括号，git 会把共同的 `}` 留在标记外 ③`app/native-theme.css` 上游新增 1622 行时，追加 fork 段要定位到 `/*` 注释首行（`mark - 1`），否则注释正文被 PostCSS 当选择器，全站 500。
+
+### 17. Remote relay（端到端加密中继）
+
+| 项 | 值 |
+|---|---|
+| ticket | `.scratch/tickets/0033-upstream-batch-a.md` |
+| commit | `132f222f`（15 个上游 commit） |
+| seam | `lib/relay/*`、`app/api/relay/**`、`components/{RelaySection,RemoteAccessSection}.tsx` |
+| 文件 | `lib/relay/{noise,frames,mark,store,connector,runtime,phone-client}.ts`、`relay/server.mjs`、`relay-shell/`、`docs/remote-relay.md`、`docs/remote-relay-deploy.md` |
+| 解锁 | 手机通过中继驱动本地会话（发 prompt / 批准工具调用），中继看不到明文 |
+
+Noise IK / IKpsk2 跑在 WebCrypto 上，配对走二维码票据，中继服务器只转发密文帧（`relay/Dockerfile` + `docker-compose.yml` 已就绪，需自行部署）。`lib/request-security.ts` 的 `isLocalRequest()` 认定「带 relay mark 的请求」永非本地，所有 local-only 路由必须问它而非 loopback Host。
+
+**未验证**：真实 wss 连通 —— 本地只验了 `GET /api/relay` 契约与 Settings UI 渲染，扫码配对的端到端链路一次没跑过。
+
+### 18. 插件 bug 三连修 + 全 API 坏 JSON 400
+
+| 项 | 值 |
+|---|---|
+| ticket | `.scratch/tickets/0024`–`0027` |
+| commit | `d3779f5`（remove）、`c478676`（update）、`665417c` + `4ef032c`（400） |
+| seam | `lib/plugin-settings.ts`、`lib/json-body.ts` |
+| 解锁 | 本地路径插件能正常卸载/更新；41 处 `await req.json()` 里 30 处坏 body 返回 400 而非 500 |
+
+根因是 pi SDK 的基准分裂：写入侧 `normalizePackageSourceForSettings` 用 **agentDir** 相对化，匹配侧 `getSourceMatchKeyForInput` 用 **cwd**，于是 `..\..\ego\x` 两侧解析成不同绝对路径、key 不等，`remove` 静默返回 false、`update` 抛 500。修法绕开路径解析：按 settings 里存的**原文字符串**做匹配（`removePackageSource` / `hasPackageSource`）。
+
+### 19. 更新检测改读 release manifest
+
+| 项 | 值 |
+|---|---|
+| ticket | `.scratch/tickets/0031-update-manifest.md` |
+| commit | `684f582` |
+| seam | `lib/app-updates.ts` 的 `getLatestAppRelease` |
+| 文件 | `lib/app-updates.ts`、`components/AppUpdatesSection.tsx` |
+| 解锁 | 更新检测不再被 GitHub API 匿名限流挡住（60/h，本机出口 IP 共用） |
+
+改读 `https://github.com/<repo>/releases/latest/download/latest.json` —— 这是 release asset，不走 REST 配额，也正是 `tauri-plugin-updater` 读的同一份。同时修了一个静默失败：`app/api/updates/route.ts` 用 `Promise.allSettled`，单项目失败仍返回 200 + `errors[]` + 上次缓存的 `components`，而 `AppUpdatesSection` 只看 `response.ok`，于是限流时界面照旧显示一周前的版本号。
+
+### 20. Windows 平台测试修复
+
+| 项 | 值 |
+|---|---|
+| ticket | `.scratch/tickets/0030-windows-test-fixtures.md` |
+| commit | `66a2492` |
+| 文件 | `scripts/test-platform.mjs`、`lib/artifact-index.test.mjs` |
+| 解锁 | 本机 `node --test lib/*.test.mjs` 从 14 fail 归零 |
+
+根因：`tmpdir()` 在 Windows 位于 `C:\Users\<name>\AppData\Local\Temp`，即**在 home 之内**，`fixtureDir()` 于是退回 checkout 内的 `test-results/fixtures`，祖先扫描一路走到仓库根，撞上 fork 自己的 `.agents/skills` → `requiresTrust` 恒真 → `project-trust` 13 条全红。修法：`inProfile` 时改用 `C:\Users\Public\pi-web-test-fixtures`（在所有 user profile 之外、同卷、祖先链干净）。
+
+另一条是 `lib/artifact-index.test.mjs` 的 `displayPath` 断言：Windows 的 temp 在 home 内会走 `~` 缩写分支，断言要先把 `~` 展开回 `userHome()` 再比。
+
+### 21. pi SDK 1.5.0
+
+| 项 | 值 |
+|---|---|
+| ticket | `.scratch/tickets/0034-pi-sdk-1.5.0.md` |
+| commit | `302eda67` |
+| 文件 | `package.json`、`scripts/release-component-pins.json`、`src-tauri/resources/component-versions.json`、`lib/chat-downloads-tool.ts`、`lib/subagent-extension.ts` |
+| 解锁 | pi-schema 工具校验；`pi-ai` 不再 re-export TypeBox |
+
+`Type` 改从 `typebox`（pin 1.3.27，与 SDK 内置的一致）导入。`release-component-pins.json` 的 `pi-web` pin 必须保持 fork 自己的版本号，照抄上游的 `0.10.0` 会打崩 `release:verify`。
+
+
 
 ---
 
-
 ### 中优先级（架构演进）
 
-#### 15. SidecarEngine（多 Agent 并行隔离）
+#### 22. SidecarEngine（多 Agent 并行隔离）
 
 | 项 | 值 |
 |---|---|
@@ -207,7 +294,7 @@ UI 卡片是声明式的：包在 `package.json` 的 `pi.ui` 数组里写 `{id, 
 
 **接口与骨架已交付（见已交付 #12）**，这一项剩下的是真跨进程隔离：每 worker 一个 `pi --mode rpc` 子进程（参考 PiDeck/PI-Desktop 思想，不抄代码避 LGPL），`SidecarEngine` 内部把「委托目标引擎」换成「spawn 子进程 + stdio JSON-RPC」。
 
-#### 16. 外部会话导入转换器
+#### 23. 外部会话导入转换器
 
 | 项 | 值 |
 |---|---|
@@ -220,7 +307,7 @@ UI 卡片是声明式的：包在 `package.json` 的 `pi.ui` 数组里写 `{id, 
 
 ### 低优先级（纯 UI / 锦上添花）
 
-#### 17. 事件总线出口：webhook / 飞书
+#### 24. 事件总线出口：webhook / 飞书
 
 | 项 | 值 |
 |---|---|
@@ -231,18 +318,18 @@ UI 卡片是声明式的：包在 `package.json` 的 `pi.ui` 数组里写 `{id, 
 
 订阅 `AgentEventBus`，按规则转发到 webhook。配置存 `~/.pi/agent/webhooks.json`。
 
-#### 18. 用量统计
+#### 25. 用量统计
 
 | 项 | 值 |
 |---|---|
-| seam | 事件总线（PR-5）+ SessionStore SQLite（#16） |
+| seam | 事件总线（PR-5）+ SessionStore SQLite（#13） |
 | 解锁 | 用量热力图/每日/模型/项目统计 |
 | 投入 | 2–3 天 |
 | 优先级 | ★☆☆ |
 
 订阅 usage 事件 → 持久化到 SQLite → 前端统计面板。
 
-#### 19. SSH RemoteEngine
+#### 26. SSH RemoteEngine
 
 | 项 | 值 |
 |---|---|
@@ -253,7 +340,7 @@ UI 卡片是声明式的：包在 `package.json` 的 `pi.ui` 数组里写 `{id, 
 
 `RemoteEngine` 实现 `AgentEngine`，`startSession` SSH 连远程机起 pi sidecar，`send`/`events` 走 SSH 通道。远期。
 
-#### 20. Plan Mode
+#### 27. Plan Mode
 
 | 项 | 值 |
 |---|---|
@@ -264,7 +351,7 @@ UI 卡片是声明式的：包在 `package.json` 的 `pi.ui` 数组里写 `{id, 
 
 启动参数带 mode=plan，agent 只规划不执行，计划确认后切 mode=execute。复用审批管道的「挂起等确认」机制。
 
-#### 21. 上下文蒸发
+#### 28. 上下文蒸发
 
 | 项 | 值 |
 |---|---|
@@ -289,6 +376,20 @@ UI 卡片是声明式的：包在 `package.json` 的 `pi.ui` 数组里写 `{id, 
 
 ---
 
+## 四、已知缺口（已交付但不完整）
+
+这些不是「没做」，是「做了但还差一口气」，按痛点排序：
+
+| 缺口 | 现状 |
+|---|---|
+| **审批规则不持久** | `lib/tool-policy.ts` 的 `InMemoryToolPolicyStore` 只存内存，重启即清空 —— 用户设的 `bash → ask` 关掉应用就没了。规则本身不在 settings 里，改动约 30 分钟 |
+| **relay 真机未验** | 代码 + UI 齐备，但需自行部署 `relay/`（Dockerfile + compose 已就绪）才有 wss 地址；扫码配对的端到端链路一次没跑过 |
+| **插件 UI contribution 只有 API** | `/api/plugins/contributions` 有、`listUiContributions` 有，**前端零消费**（只有 `lib/plugin-registry.ts:15` 的注释提到）。真正能用的是 `pi.ui` 声明式卡片（#14） |
+| **SQLite 存储默认关** | `PI_SESSION_STORE=sqlite` 才生效。实测 53 会话 warm FS 14-18ms vs SQLite 47-50ms，优势要到数百会话才显现 |
+| **技术债** | `IDLE_SESSION_CAP_MAX_COUNT = 12` 是死常量（上游只改常量未改实现）；`lib/mcp-host.test.mjs:768` 时间敏感、满负载并发偶发红；`lib/rpc-manager.ts` 的 assembler body 缩进少一层（重排 280 行风险 > 收益，主动不做） |
+
+---
+
 ## 状态图例
 
 | 标记 | 含义 |
@@ -305,4 +406,15 @@ UI 卡片是声明式的：包在 `package.json` 的 `pi.ui` 数组里写 `{id, 
 |---|---|
 | 0.10.1 | PR-1~PR-6（5 个 seam + 插件骨架）+ 发版基建 + releaseBody 自动化 |
 | 0.10.2 | PR-5 `session_ended` 端测（`b02ad78`）+ 平台裁剪（`6e08e34`/`a6da4bc`）+ releaseBody（`c35ae95`）+ 消息轨道（`e33c22d`）+ 审批 UI（`f5f8495`） |
-| 未定 | #14~#22 待做项，按优先级逐个 PR |
+| 0.10.3 | 审批 UI review 修复（`bee795a`）+ 移动端触摸目标（`1a51f5e`）+ changeset 补漏（`11a69c5`） |
+| 0.10.4 | 改名 PiD（`ce0710b`：npm `pid`、identifier `com.rebotan.pid`）+ flatpak/deb 废弃（`8c50642`，Linux 只出 rpm） |
+| 0.10.5 | 图标改白底黑 π |
+| 0.10.6 | 全量打包（Windows nsis + Linux rpm） |
+| 0.10.7 | #11 SQLite 列表镜像 + compactionCount 补齐 + `close()`（`d0e5a3d`） |
+| 0.10.8 | SessionStore 代码质量：死列迁移、继承替代 Middle Man（`dc2bed9`）+ fork 关系端到端验证 |
+| 0.10.9 | 插件市场搜索（`91781bd`）+ 上游 18 commit（`57df7bc`）+ 合并后 CSS 断裂修复（`a714edd`） |
+| 0.10.10 | 插件声明的 UI 卡片（`f1134dc`）+ 插件 remove/update/坏 JSON 三连修（`d3779f5`–`4ef032c`） |
+| 0.10.11 | 上游 55 commit（`d901af4`：Artifacts 大改、WebView2 恢复、单实例插件）+ Artifacts 触摸目标（`73c4a12`）+ Windows 测试修复（`66a2492`） |
+| 0.10.12 | 更新检测改读 `latest.json`，不再被 GitHub API 限流挡住（`684f582`） |
+| 0.10.13 | 上游 57 commit 分三批：B（`4e67c64f`，20 commit）+ A relay（`132f222f`，15 commit）+ C pi SDK 1.5.0（`302eda67`） |
+| 未定 | #22~#28 待做项，按优先级逐个 PR |
