@@ -210,25 +210,12 @@ npm 包名 `pid`（无 scope）、Tauri identifier `com.rebotan.pid`、release �
 |---|---|---|---|
 | 1 | 18 commit | `57df7bc` | 终端偏好与工作区 UI、对话内查找、聊天改进（front matter / GitHub alerts / 折叠长代码块 / 流式 markdown 稳定）、中性主题、菜单放置 |
 | 2 | 55 commit | `d901af4` | Artifacts 大改（跨会话索引 / 缩略图 / 收藏 / 列表列可调）、设计 token 清理、WebView2 `ProcessFailed` 恢复、`tauri-plugin-single-instance` |
-| 3 | 57 commit 分三批 | `4e67c64f`（B）/ `132f222f`（A）/ `302eda67`（C） | B：render error 页、项目归档、Tasks 页、批量操作、会话改名、自动命名、字节制空闲上限、侧边栏 GPU 优化；A：**Remote relay 整套**；C：pi SDK 1.5.0 |
+| 3 | 57 commit 分三批 | `4e67c64f`（B）/ `132f222f`（A）/ `302eda67`（C） | B：render error 页、项目归档、Tasks 页、批量操作、会话改名、自动命名、字节制空闲上限、侧边栏 GPU 优化；A：render error 页、项目归档；C：pi SDK 1.5.0 |
 
 冲突固定模式（每次都一样）：`app/native-theme.css` 上游规则在前、fork 五段（0011 轨道 / 0013 审批 / 0014 移动端 / 0022 市场 / 0023 UI 卡片）在后；`package.json` 保 fork 的 `changeset`/`version`/`release:notes`；`lib/i18n/locale-plugins.ts` 保 "PiD server" 文案；`release.yml`/`Casks`/`Cargo.*`/`component-versions.json` 一律保 fork。
 
 **三个反复踩的坑**：①这些文件是 CRLF，比较行必须 `trimEnd()`，解冲突脚本不能用 `line === "======="` ②CSS 冲突交换后必数花括号，git 会把共同的 `}` 留在标记外 ③`app/native-theme.css` 上游新增 1622 行时，追加 fork 段要定位到 `/*` 注释首行（`mark - 1`），否则注释正文被 PostCSS 当选择器，全站 500。
 
-### 17. Remote relay（端到端加密中继）
-
-| 项 | 值 |
-|---|---|
-| ticket | `.scratch/tickets/0033-upstream-batch-a.md` |
-| commit | `132f222f`（15 个上游 commit） |
-| seam | `lib/relay/*`、`app/api/relay/**`、`components/{RelaySection,RemoteAccessSection}.tsx` |
-| 文件 | `lib/relay/{noise,frames,mark,store,connector,runtime,phone-client}.ts`、`relay/server.mjs`、`relay-shell/`、`docs/remote-relay.md`、`docs/remote-relay-deploy.md` |
-| 解锁 | 手机通过中继驱动本地会话（发 prompt / 批准工具调用），中继看不到明文 |
-
-Noise IK / IKpsk2 跑在 WebCrypto 上，配对走二维码票据，中继服务器只转发密文帧（`relay/Dockerfile` + `docker-compose.yml` 已就绪，需自行部署）。`lib/request-security.ts` 的 `isLocalRequest()` 认定「带 relay mark 的请求」永非本地，所有 local-only 路由必须问它而非 loopback Host。
-
-**未验证**：真实 wss 连通 —— 本地只验了 `GET /api/relay` 契约与 Settings UI 渲染，扫码配对的端到端链路一次没跑过。
 
 ### 18. 插件 bug 三连修 + 全 API 坏 JSON 400
 
@@ -383,7 +370,6 @@ Noise IK / IKpsk2 跑在 WebCrypto 上，配对走二维码票据，中继服务
 | 缺口 | 现状 |
 |---|---|
 | **审批规则不持久** | `lib/tool-policy.ts` 的 `InMemoryToolPolicyStore` 只存内存，重启即清空 —— 用户设的 `bash → ask` 关掉应用就没了。规则本身不在 settings 里，改动约 30 分钟 |
-| **relay 真机未验** | 代码 + UI 齐备，但需自行部署 `relay/`（Dockerfile + compose 已就绪）才有 wss 地址；扫码配对的端到端链路一次没跑过 |
 | **插件 UI contribution 只有 API** | `/api/plugins/contributions` 有、`listUiContributions` 有，**前端零消费**（只有 `lib/plugin-registry.ts:15` 的注释提到）。真正能用的是 `pi.ui` 声明式卡片（#14） |
 | **SQLite 存储默认关** | `PI_SESSION_STORE=sqlite` 才生效。实测 53 会话 warm FS 14-18ms vs SQLite 47-50ms，优势要到数百会话才显现 |
 | **技术债** | `IDLE_SESSION_CAP_MAX_COUNT = 12` 是死常量（上游只改常量未改实现）；`lib/mcp-host.test.mjs:768` 时间敏感、满负载并发偶发红；`lib/rpc-manager.ts` 的 assembler body 缩进少一层（重排 280 行风险 > 收益，主动不做） |
@@ -416,5 +402,5 @@ Noise IK / IKpsk2 跑在 WebCrypto 上，配对走二维码票据，中继服务
 | 0.10.10 | 插件声明的 UI 卡片（`f1134dc`）+ 插件 remove/update/坏 JSON 三连修（`d3779f5`–`4ef032c`） |
 | 0.10.11 | 上游 55 commit（`d901af4`：Artifacts 大改、WebView2 恢复、单实例插件）+ Artifacts 触摸目标（`73c4a12`）+ Windows 测试修复（`66a2492`） |
 | 0.10.12 | 更新检测改读 `latest.json`，不再被 GitHub API 限流挡住（`684f582`） |
-| 0.10.13 | 上游 57 commit 分三批：B（`4e67c64f`，20 commit）+ A relay（`132f222f`，15 commit）+ C pi SDK 1.5.0（`302eda67`） |
+| 0.10.13 | 上游 57 commit 分三批：B（`4e67c64f`，20 commit）+ A（`132f222f`，15 commit）+ C pi SDK 1.5.0（`302eda67`） |
 | 未定 | #22~#28 待做项，按优先级逐个 PR |

@@ -3,7 +3,6 @@ import { isIP } from "node:net";
 import { dirname, join } from "node:path";
 import { writePrivateFileAtomicSync } from "./atomic-file.ts";
 import { userHome } from "./user-home.ts";
-import { hasRelayMark } from "./relay/mark.ts";
 
 /**
  * Remote access through Tailscale Serve.
@@ -249,8 +248,6 @@ export function isLocalRequest(request: Request): boolean {
     || isLoopbackAddress(hostname);
   return loopback
     && !isRelayedFromAnotherMachine(request)
-    // The encrypted relay replays a phone's requests from 127.0.0.1 (lib/relay/connector.ts).
-    && !hasRelayMark(request)
     && !request.headers.has(TAILSCALE_USER_LOGIN_HEADER)
     && !isTailscaleFunnelRequest(request);
 }

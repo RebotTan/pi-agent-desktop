@@ -10,7 +10,7 @@ export const runtime = "nodejs";
 
 /** Whether this request may raise a file-manager window on the server. */
 function availabilityFor(request: Request): { supported: boolean; reason: string | null } {
-  // A relayed or Tailscale-forwarded request carries a loopback Host too; isLocalRequest tells them apart.
+  // A Tailscale-forwarded request carries a loopback Host too; isLocalRequest tells them apart.
   if (!isLocalRequest(request)) return { supported: false, reason: "remote" };
   if (!isFileManagerSupported(process.platform)) return { supported: false, reason: "unsupported-platform" };
   return { supported: true, reason: null };

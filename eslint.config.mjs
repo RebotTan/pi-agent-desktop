@@ -7,7 +7,6 @@ const eslintConfig = [
       ".claude/**",
       ".next/**",
       ".next-desktop/**",
-      "relay-shell/dist/**",
       "test-results/**",
       "src-tauri/resources/server/**",
       "src-tauri/target/**",

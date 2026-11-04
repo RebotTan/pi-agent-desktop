@@ -39,7 +39,6 @@ import { McpConfig } from "./McpConfig";
 import { ConfigButton, ConfigSwitch } from "./SettingsUi";
 import { ArtifactsSettingRow, AutoTitleSettingRow } from "./ArtifactsSettingRow";
 import { RemoteAccessSection } from "./RemoteAccessSection";
-import { RelaySection } from "./RelaySection";
 import { ChatsSettingsSection } from "./ChatsSettingsSection";
 import { AppearanceSettings } from "./AppearanceSettings";
 import { ToolPolicySettings } from "./ToolPolicySettings";
@@ -355,7 +354,6 @@ function GeneralSettings({
 
           <DesktopAppSection />
 
-          <RelaySection />
 
           <RemoteAccessSection />
 
