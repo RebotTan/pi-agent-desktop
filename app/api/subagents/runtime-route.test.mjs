@@ -7,6 +7,16 @@ const jiti = createJiti(import.meta.url, {
   interopDefault: true,
   moduleCache: false,
 });
+
+const { getEngine } = await jiti.import("@/lib/agent-engine.ts");
+
+/** The engine owns the wrapper registry; a test fills it through the engine. */
+function replaceRegistry(map) {
+  const registry = getEngine().registry();
+  registry.clear();
+  for (const [id, wrapper] of map) registry.set(id, wrapper);
+}
+
 const { GET, POST } = await jiti.import("./[id]/route.ts");
 
 const id = "subagent-route-test";
@@ -21,7 +31,7 @@ function request(body) {
 }
 
 function installRunningSubagent(t) {
-  const previousRegistry = globalThis.__piSessions;
+  const previousRegistry = getEngine().allEntries();
   const previousRuns = globalThis.__piSubagentRuns;
   let running = true;
   const steered = [];
@@ -45,7 +55,7 @@ function installRunningSubagent(t) {
     },
   }];
   globalThis.__piSubagentRuns = new Map();
-  globalThis.__piSessions = new Map([[id, {
+  replaceRegistry(new Map([[id, {
     isAlive: () => true,
     isRunning: () => running,
     sessionFile: `/tmp/${id}.jsonl`,
@@ -54,9 +64,9 @@ function installRunningSubagent(t) {
       steer: async (message) => { steered.push(message); },
       abort: async () => { aborts += 1; },
     },
-  }]]);
+  }]]));
   t.after(() => {
-    globalThis.__piSessions = previousRegistry;
+    replaceRegistry(new Map(previousRegistry));
     globalThis.__piSubagentRuns = previousRuns;
   });
   return {
@@ -99,12 +109,12 @@ test("subagent route validates actions and rejects commands after completion", a
 });
 
 test("subagent GET returns 404 for an unknown session", async (t) => {
-  const previousRegistry = globalThis.__piSessions;
+  const previousRegistry = getEngine().allEntries();
   const previousRuns = globalThis.__piSubagentRuns;
-  globalThis.__piSessions = new Map();
+  replaceRegistry(new Map());
   globalThis.__piSubagentRuns = new Map();
   t.after(() => {
-    globalThis.__piSessions = previousRegistry;
+    replaceRegistry(new Map(previousRegistry));
     globalThis.__piSubagentRuns = previousRuns;
   });
 

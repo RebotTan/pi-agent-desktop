@@ -7,6 +7,7 @@ import { invalidateSessionListCache } from "@/lib/session-reader";
 import { startRpcSession } from "@/lib/rpc-manager";
 import { ensureChatWorkspace, isChatWorkspacePath } from "@/lib/chat-workspace";
 import { isJsonBodyError, readJsonBody } from "@/lib/json-body";
+import { cwdMissingBody } from "@/lib/missing-cwd";
 
 const THINKING_LEVELS = new Set<ThinkingLevel>(["off", "minimal", "low", "medium", "high", "xhigh", "max"]);
 
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
     if (chatWorkspace) await ensureChatWorkspace();
     if (!existsSync(cwd)) {
       return NextResponse.json({
-        error: `Directory does not exist: ${cwd}`,
+        ...cwdMissingBody(cwd),
         ...(commandType === "prompt"
           ? { code: "prompt_rejected", accepted: false }
           : {}),

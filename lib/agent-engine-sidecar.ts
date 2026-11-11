@@ -67,6 +67,9 @@ export class SidecarEngine<H extends SessionHandle = AgentSessionWrapper> implem
   deleteStartLock(sessionId: string): void {
     this.target.deleteStartLock(sessionId);
   }
+  allStartLocks(): Array<[string, StartLock<H>]> {
+    return this.target.allStartLocks();
+  }
 
   // --- starting cwds ---
   hasStartingCwd(cwd: string): boolean {
