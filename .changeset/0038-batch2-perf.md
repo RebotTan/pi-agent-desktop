@@ -1,5 +1,0 @@
----
-"pid": patch
----
-
-Pick up five upstream performance fixes whose changes do not collide with this fork's own work: the service worker no longer holds a static response behind its cache write, long expanded thinking renders in pieces instead of one huge block, the pi SDK import starts at boot rather than on the first request, a finished run rebuilds the session list once instead of twice, and provider signatures stay out of the payload sent to the browser (they belong to model context, not to display copies). Four other upstream performance commits were left out on purpose — Prism language loading (this fork already registers a curated set through `PrismLight`), the streaming selector (needs the chat window rewrite scheduled for the next batch), tail-only session rescans (the default path is already cached and SQLite skips scanning), and the provider model cache (collides with the plugin route fixes shipped in 0.10.10).

@@ -1,5 +1,19 @@
 # @agegr/pi-web
 
+## 0.10.14
+
+### Patch Changes
+
+- [`2f93a9e`](https://github.com/RebotTan/pi-agent-desktop/commit/2f93a9e474a6c87725573509b8f35467c8d468b9) Thanks [@tanjianwd](https://github.com/tanjianwd)! - 审批规则落盘：重启 PiD 后工具权限规则仍在（`~/.pi/agent/pi-web/settings.json`）。
+
+- [`3427887`](https://github.com/RebotTan/pi-agent-desktop/commit/34278874b6c801f032a54dc1103ba030a5db9ae6) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Remove the end-to-end encrypted relay: the feature was a design error (Tailscale Remote access already covers the same need). Deletes relay/, relay-shell/, lib/relay/, app/api/relay/, components/RelaySection.tsx, docs/remote-relay\*.md, e2e/relay.mjs, scripts/build-relay-shell.mjs, and strips relay wiring from proxy.ts, instrumentation-node.ts, lib/remote-access.ts, lib/desktop-api-auth.ts, lib/web-push.ts, app/api/push/subscribe/route.ts, components/SettingsPanel.tsx, components/PwaRegistration.tsx, lib/i18n/locale-plugins.ts, app/native-theme.css, package.json, eslint.config.mjs, scripts/fork-ownership.json, scripts/release-workflows.test.mjs, components/fork-extractions.test.mjs, lib/web-push.test.mjs, lib/remote-access.test.mjs, AGENTS.md, docs/fork-roadmap.md. Tailscale Remote access is unaffected.
+
+- [`cfb5099`](https://github.com/RebotTan/pi-agent-desktop/commit/cfb50990d929a1ecf0e98cebaf572e9cf366abef) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Close the remote-access password bypass through the shipped `previewModeId`, and upgrade the bundled pi SDK to 1.5.2. Next skipped `proxy.ts` for any request whose `x-prerender-revalidate` header matched the build's previewModeId — a value every installer ships and anyone can read — so with Tailscale or LAN mode on the password gate and Host/Origin checks could be skipped. The desktop launcher now strips that header and rewrites the three preview secrets on every start. The SDK upgrade pins all eight `@earendil-works/pi-*` packages at 1.5.2 (upstream does the same; 1.5.x does not hold across minors) and follows 1.5.1's move of `McpSignInCancelledError` into `pi-mcp` plus sign-in's new per-server refresh lock.
+
+- [`687a644`](https://github.com/RebotTan/pi-agent-desktop/commit/687a644a64e1e09895dda91bea25937f41bb2303) Thanks [@tanjianwd](https://github.com/tanjianwd)! - Pick up five upstream performance fixes whose changes do not collide with this fork's own work: the service worker no longer holds a static response behind its cache write, long expanded thinking renders in pieces instead of one huge block, the pi SDK import starts at boot rather than on the first request, a finished run rebuilds the session list once instead of twice, and provider signatures stay out of the payload sent to the browser (they belong to model context, not to display copies). Four other upstream performance commits were left out on purpose — Prism language loading (this fork already registers a curated set through `PrismLight`), the streaming selector (needs the chat window rewrite scheduled for the next batch), tail-only session rescans (the default path is already cached and SQLite skips scanning), and the provider model cache (collides with the plugin route fixes shipped in 0.10.10).
+
+- [`58624f5`](https://github.com/RebotTan/pi-agent-desktop/commit/58624f5ba18a1c4fe848d111ab55bf1bfe60fc29) Thanks [@tanjianwd](https://github.com/tanjianwd)! - 修复审计发现的 4 个问题：AgentEngine 接口泄漏内部注册表、SQLite 会话扫描单行损坏丢整条会话、relay forgetSession 重复触发 onChange、relay 测试未等 connector 清理 idle session 导致间歇失败。
+
 ## 0.10.13
 
 ### Patch Changes
