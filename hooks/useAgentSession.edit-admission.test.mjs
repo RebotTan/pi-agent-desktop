@@ -5,7 +5,8 @@ import ts from "typescript";
 
 const source = await readFile(new URL("./useAgentSession.ts", import.meta.url), "utf8");
 const start = source.indexOf("  const handleEditContent = useCallback(");
-const end = source.indexOf("\n\n", start);
+// The working tree is CRLF; a paragraph break is \r\n\r\n there.
+const end = start < 0 ? -1 : start + source.slice(start).search(/\r?\n\r?\n/);
 assert.ok(start >= 0 && end > start);
 const callback = source.slice(start, end);
 const js = ts.transpileModule(`${callback}; return handleEditContent;`, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;

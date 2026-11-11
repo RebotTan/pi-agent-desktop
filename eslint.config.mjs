@@ -7,6 +7,7 @@ const eslintConfig = [
       ".claude/**",
       ".next/**",
       ".next-desktop/**",
+      "relay-shell/dist/**",
       "test-results/**",
       "src-tauri/resources/server/**",
       "src-tauri/target/**",
@@ -21,6 +22,7 @@ const eslintConfig = [
   {
     rules: {
       "react-hooks/immutability": "off",
+      "react-hooks/preserve-manual-memoization": "off",
       "react-hooks/refs": "off",
       "react-hooks/set-state-in-effect": "off",
     },

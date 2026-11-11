@@ -17,6 +17,9 @@ const sessionsDir = join(home, ".pi", "agent", "sessions", "--rename-fixture--")
 mkdirSync(sessionsDir, { recursive: true });
 
 const jiti = createJiti(import.meta.url, { alias: { "@": process.cwd() }, interopDefault: true });
+
+const { getEngine } = await jiti.import("@/lib/agent-engine.ts");
+
 const { GET, PATCH } = await jiti.import("./[id]/route.ts");
 
 function flushedSession(name) {
@@ -36,9 +39,8 @@ function register(manager) {
     evictIfDiskAhead: () => false,
     inner: { sessionManager: manager, setSessionName: (name) => manager.appendSessionInfo(name) },
   };
-  globalThis.__piSessions ??= new Map();
-  globalThis.__piSessions.set(id, wrapper);
-  after(() => globalThis.__piSessions.delete(id));
+    getEngine().registry().set(id, wrapper);
+  after(() => getEngine().registry().delete(id));
   return id;
 }
 

@@ -8,12 +8,12 @@
  * unwatched for IDLE_SESSION_CAP_GRACE_MS count; the most recently left one is
  * always kept, so going back to the session just left is still instant.
  *
- * The byte budget is what bounds the heap; the count only stops many small
- * sessions piling up. At 4 it evicted ordinary 1-5 MB sessions while the user
- * cycled through a handful, and every switch back cold-started a wrapper
- * (re-parsing the transcript and rebinding extensions) — 0.8.1's slow switches.
+ * Only bytes are capped, never the number of sessions: small transcripts cost
+ * little heap, and 0.8.1's count of 4 evicted ordinary 1-5 MB sessions while
+ * the user switched among a handful, so every switch back cold-started a
+ * wrapper (re-parsing the transcript and rebinding extensions). The 10-minute
+ * idle timeout still releases them all.
  */
-export const IDLE_SESSION_CAP_MAX_COUNT = 12;
 /** Session-file bytes, a proxy for the heap a loaded transcript holds. */
 export const IDLE_SESSION_CAP_MAX_BYTES = 256 * 1024 * 1024;
 /** An EventSource reconnect or a session switch briefly leaves zero listeners. */

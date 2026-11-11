@@ -26,7 +26,7 @@ function dispatchNotificationClick(data) {
   return { pending, wasClosed: () => closed };
 }
 
-function dispatchPush(payload, clients) {
+function dispatchPush(payload, clients, getNotifications = async () => []) {
   let pending;
   const shown = [];
   self.clients = {
@@ -35,6 +35,7 @@ function dispatchPush(payload, clients) {
   };
   self.registration = {
     showNotification: async (title, options) => { shown.push({ title, options }); },
+    getNotifications,
   };
   listeners.get("push")({
     data: { json: () => payload },
@@ -60,15 +61,61 @@ test("push always shows a notification, even when a window is visible", async ()
 
   // iOS revokes the push subscription when a push is handled without a
   // notification, so the notification must never be suppressed.
+  assert.equal(event.shown.length, 1);
+  const shownAt = event.shown[0].options.data.shownAt;
+  assert.equal(typeof shownAt, "number");
   assert.deepEqual(event.shown, [{
     title: "Session complete",
     options: {
       body: "Task finished.",
-      data: { url: "/?session=session-1" },
+      data: { url: "/?session=session-1", shownAt },
       tag: "pi-session-complete:session-1",
       renotify: true,
     },
   }]);
+});
+
+const completionPush = {
+  title: "Session complete",
+  body: "Task finished.",
+  url: "/?session=session-1",
+  tag: "pi-session-complete:session-1",
+};
+
+function existingNotifications(list) {
+  return async ({ tag }) => list.filter((notification) => notification.tag === tag);
+}
+
+test("push quietly replaces the page's notification of the same completion (#1515)", async () => {
+  const event = dispatchPush(completionPush, [], existingNotifications([
+    { tag: "pi-session-complete:session-1", data: { url: "/?session=session-1", shownAt: Date.now() - 600 } },
+  ]));
+  await event.pending;
+
+  // Still shown, which iOS requires, but without a second alert.
+  assert.equal(event.shown.length, 1);
+  assert.equal(event.shown[0].options.tag, "pi-session-complete:session-1");
+  assert.equal(event.shown[0].options.renotify, false);
+});
+
+test("push alerts again over an earlier task's notification (#701)", async () => {
+  const event = dispatchPush(completionPush, [], existingNotifications([
+    { tag: "pi-session-complete:session-1", data: { url: "/?session=session-1", shownAt: Date.now() - 60_000 } },
+    { tag: "pi-session-complete:session-1", data: { url: "/?session=session-1" } },
+    { tag: "pi-session-complete:session-2", data: { url: "/?session=session-2", shownAt: Date.now() } },
+  ]));
+  await event.pending;
+
+  assert.equal(event.shown.length, 1);
+  assert.equal(event.shown[0].options.renotify, true);
+});
+
+test("push alerts when the browser cannot list notifications", async () => {
+  const event = dispatchPush(completionPush, [], async () => { throw new Error("unsupported"); });
+  await event.pending;
+
+  assert.equal(event.shown.length, 1);
+  assert.equal(event.shown[0].options.renotify, true);
 });
 
 test("push ignores malformed payloads", async () => {
@@ -167,6 +214,54 @@ function dispatchFetch(url, { mode = "cors", method = "GET" } = {}) {
   });
   return { pending, background };
 }
+
+test("install precaches offline assets but not the runtime manifest", async () => {
+  let pending;
+  let precached;
+  let skipped = false;
+  globalThis.caches = {
+    open: async () => ({ addAll: async (urls) => { precached = urls; } }),
+  };
+  self.skipWaiting = async () => { skipped = true; };
+  listeners.get("install")({ waitUntil: (promise) => { pending = promise; } });
+  await pending;
+
+  assert.deepEqual(precached, [
+    "/offline.html",
+    "/icons/icon-192.png",
+    "/icons/icon-512.png",
+    "/icons/apple-touch-icon.png",
+  ]);
+  assert.equal(skipped, true);
+});
+
+test("manifest requests bypass the worker even with query strings and old cached entries", async () => {
+  const stale = new Response('{"name":"Old Pi"}');
+  let cacheReads = 0;
+  globalThis.caches = {
+    match: async () => { cacheReads++; return stale.clone(); },
+    open: async () => assert.fail("manifest must not be cached"),
+  };
+  const networkRequests = [];
+  globalThis.fetch = async (request) => {
+    networkRequests.push(request.url);
+    return new Response('{"name":"New Pi"}');
+  };
+
+  for (const path of ["/manifest.webmanifest", "/manifest.webmanifest?v=old"]) {
+    for (const mode of ["cors", "navigate"]) {
+      const url = `https://pi.test${path}`;
+      const { pending, background } = dispatchFetch(url, { mode });
+      assert.equal(pending, undefined, "no respondWith: leave the request to the browser");
+      assert.deepEqual(background, []);
+      // Model the browser's normal network fallback when respondWith is absent.
+      const response = await fetch(new Request(url));
+      assert.deepEqual(await response.json(), { name: "New Pi" });
+    }
+  }
+  assert.equal(cacheReads, 0, "old cached manifests must never be read");
+  assert.equal(networkRequests.length, 4);
+});
 
 /** fetch() that never settles until the signal it was handed is aborted. */
 function installHungNetwork() {

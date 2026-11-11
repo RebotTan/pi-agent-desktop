@@ -51,6 +51,8 @@ export interface AgentEngine<H extends SessionHandle = AgentSessionWrapper> {
   getStartLock(sessionId: string): StartLock<H> | undefined;
   setStartLock(sessionId: string, lock: StartLock<H>): void;
   deleteStartLock(sessionId: string): void;
+  /** 枚举在途 start locks（debug 面板用：尚未注册 wrapper 的启动）。 */
+  allStartLocks(): Array<[string, StartLock<H>]>;
 
   // --- starting cwds（新会话热路径的去重/忙检测）---
   hasStartingCwd(cwd: string): boolean;
@@ -142,6 +144,9 @@ export class InProcessAgentEngine implements AgentEngine<AgentSessionWrapper> {
   }
   deleteStartLock(sessionId: string): void {
     this.startLockMap.delete(sessionId);
+  }
+  allStartLocks(): Array<[string, StartLock]> {
+    return Array.from(this.startLockMap.entries());
   }
 
   // --- starting cwds ---
