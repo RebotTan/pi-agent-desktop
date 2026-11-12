@@ -1,6 +1,5 @@
 import type {
   AppComponentReleaseInfo,
-  AppReleaseHighlights,
   AppUpdateInfo,
   AppUpdateProjectId,
 } from "@/lib/app-update-types";
@@ -23,8 +22,6 @@ export interface AppUpdateProject {
 interface LatestJson {
   version?: unknown;
   pub_date?: unknown;
-  /** The release body: tauri's manifest carries it, which is where the highlights come from. */
-  notes?: unknown;
 }
 
 interface ParsedVersion {
@@ -125,53 +122,11 @@ export function getUnknownAppReleaseInfo(project: AppUpdateProject): AppComponen
   };
 }
 
-
-const HIGHLIGHT_SECTIONS = {
-  en: ["New", "Improved"],
-  zh: ["新增", "改进"],
-} as const;
-const MAX_HIGHLIGHTS = 8;
-const MAX_HIGHLIGHT_LENGTH = 40;
-
-/**
- * The bold lead-in of each top-level item in a release-notes section
- * ("- **Network proxy.** …" → "Network proxy"), from the first of the
- * language's sections that has any. The notes are bilingual: English first,
- * then Chinese after a `---` rule; each language is read on its own.
- */
-export function parseReleaseHighlights(body: unknown): AppReleaseHighlights | undefined {
-  if (typeof body !== "string" || !body.trim()) return undefined;
-  const pick = (headings: readonly string[]): string[] => {
-    for (const heading of headings) {
-      const match = new RegExp(`^###\\s+${heading}\\s*$([\\s\\S]*?)(?=^#{1,3}\\s|^---\\s*$|(?![\\s\\S]))`, "m").exec(body);
-      if (!match) continue;
-      const titles: string[] = [];
-      for (const line of match[1].split(/\r?\n/)) {
-        const item = /^[-*]\s+\*\*(.+?)\*\*/.exec(line);
-        if (!item) continue;
-        const title = item[1].replace(/[\s.。:：!！]+$/u, "").trim();
-        if (title && title.length <= MAX_HIGHLIGHT_LENGTH && !/^(security|安全)$/iu.test(title)) titles.push(title);
-        if (titles.length >= MAX_HIGHLIGHTS) break;
-      }
-      if (titles.length > 0) return titles;
-    }
-    return [];
-  };
-  const highlights = { en: pick(HIGHLIGHT_SECTIONS.en), zh: pick(HIGHLIGHT_SECTIONS.zh) };
-  return highlights.en.length > 0 || highlights.zh.length > 0 ? highlights : undefined;
-}
-
 function unpublishedRelease(project: AppUpdateProject): AppComponentReleaseInfo {
   return {
     ...getUnknownAppReleaseInfo(project),
     releaseStatus: "unpublished",
   };
-}
-
-/** The highlights a manifest's notes carry, shaped for spreading into the entry. */
-function withHighlights(notes: unknown): { highlights?: AppReleaseHighlights } {
-  const highlights = parseReleaseHighlights(notes);
-  return highlights ? { highlights } : {};
 }
 
 /** The tag a release page lives at. The manifest carries only the version, and the
@@ -195,8 +150,6 @@ function parseLatestJson(project: AppUpdateProject, raw: LatestJson): AppCompone
     releaseUrl: releasePageUrl(project, latest.display),
     updateAvailable: compareAppVersions(latest.display, current.display) > 0,
     releaseStatus: "available",
-    // The manifest's notes are the release body, the same text the REST path parses.
-    ...withHighlights(raw.notes),
   };
 }
 
