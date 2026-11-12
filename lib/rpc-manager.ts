@@ -2893,7 +2893,7 @@ function recordSessionStart(sessionId: string): void {
     const sessions = new Map(getEngine().allEntries());
     for (const id of lifecycles.keys()) {
       if (lifecycles.size <= SESSION_LIFECYCLE_LIMIT) break;
-      if (id !== sessionId && !sessions?.has(id)) lifecycles.delete(id);
+      if (id !== sessionId && !sessions.has(id)) lifecycles.delete(id);
     }
   } catch {
     // The panel shows no history for this id.
@@ -3569,7 +3569,7 @@ export function getRpcStartingSessionIds(): string[] {
   for (const key of locks.keys()) {
     const registeredId = registered instanceof Map ? registered.get(key) : undefined;
     const id = typeof registeredId === "string" && registeredId ? registeredId : key;
-    const wrapper = sessions instanceof Map ? sessions.get(id) as MaybeStaleWrapper | undefined : undefined;
+    const wrapper = sessions.get(id) as MaybeStaleWrapper | undefined;
     let alive = false;
     try { alive = typeof wrapper?.isAlive === "function" && wrapper.isAlive() === true; } catch { /* starting */ }
     if (!alive) ids.push(key);

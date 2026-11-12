@@ -49,6 +49,14 @@ Pi delays the first flush of a new session until an assistant message exists, so
 - `GET /api/sessions` returns a `sessionListVersion` counter; the sidebar's SSE handler refetches the list (reusing the invalidated server cache, no forced scan) whenever the version moves — that is how edits from another window/process appear.
 - The sidebar refetches the list once per running id it has no row for, because a session can start running between list fetches.
 
+## Agent engine seam (`lib/agent-engine.ts`)
+
+- `getEngine()` returns the `InProcessAgentEngine` singleton, held on `globalThis.__piEngine` so a hot reload and every route module share one instance. It owns the four containers that used to be module-level `globalThis` globals: `sessions`, `startLockMap`, `startingCwdMap`, `runningListenerSet`.
+- `startSession(sessionId, assembler, options?)` owns the concurrency protocol (existing wrapper reused / inflight start merged / closing wait queued / start lock registered and released). Session assembly stays in `lib/rpc-manager.ts` and arrives as the `assembler` callback, so the engine never imports session internals.
+- Read seams for the debug and running routes: `allEntries()`, `allStartLocks()`, `registry()`. Upstream code that reached for `globalThis.__piSessions` (`getAwaitingInputRpcSessionIds`, `getRpcSessionDebugSnapshots`, `getRpcStartingSessionIds`, `readSessionLifecycles`) now goes through these — keep it that way, and adapt upstream tests with a small `swapEngineRegistry` / `swapEngineStartLocks` helper rather than reintroducing the globals.
+- The engine's containers stay **private**, not aliases of the old globals: a shared `Set` made `AgentEngineSidecar`'s `target.runningListenerCount()` read the parent's listeners too, and `lib/agent-engine-sidecar.test.mjs` pins that every semantic method delegates to its target.
+- `globalThis.__piStartRegisteredIds` remains a plain global map (temporary start key → pi's session id). It is bookkeeping the engine does not own; `startRpcSession`'s `finally` calls `forgetStartRegisteredId()`, and `getRpcStartingSessionIds()` drops entries whose lock is gone so a crash cannot leak a phantom "starting" row.
+
 ## Event pipeline: SDK → wire → client (`lib/agent-event-stream.ts`, `lib/agent-event-wire.ts`)
 - Per-agent SSE goes through `createAgentEventStream(req, id, sessionPromise)`: the session starts **asynchronously** (the route never `await`s `startRpcSession`), the stream filters events through `toClientAgentEvent()` and forwards them with one shared `TextEncoder`. Cancellation is `cancelStream(closeController)`; closing with `false` keeps the session's own listeners alive.
 - The sidebar's running-id stream (`/api/agent/running/events`) keeps the older inline `dispose` pattern and must stay registered in `app/api/agent/events-route.test.mjs`.
