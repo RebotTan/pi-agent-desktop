@@ -23,6 +23,8 @@ export interface AppUpdateProject {
 interface LatestJson {
   version?: unknown;
   pub_date?: unknown;
+  /** The release body: tauri's manifest carries it, which is where the highlights come from. */
+  notes?: unknown;
 }
 
 interface ParsedVersion {
@@ -166,6 +168,12 @@ function unpublishedRelease(project: AppUpdateProject): AppComponentReleaseInfo 
   };
 }
 
+/** The highlights a manifest's notes carry, shaped for spreading into the entry. */
+function withHighlights(notes: unknown): { highlights?: AppReleaseHighlights } {
+  const highlights = parseReleaseHighlights(notes);
+  return highlights ? { highlights } : {};
+}
+
 /** The tag a release page lives at. The manifest carries only the version, and the
  * tags this project publishes are always `v<version>`. */
 export function releasePageUrl(project: AppUpdateProject, version: string): string {
@@ -187,6 +195,8 @@ function parseLatestJson(project: AppUpdateProject, raw: LatestJson): AppCompone
     releaseUrl: releasePageUrl(project, latest.display),
     updateAvailable: compareAppVersions(latest.display, current.display) > 0,
     releaseStatus: "available",
+    // The manifest's notes are the release body, the same text the REST path parses.
+    ...withHighlights(raw.notes),
   };
 }
 
