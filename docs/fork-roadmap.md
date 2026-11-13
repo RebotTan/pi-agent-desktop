@@ -6,7 +6,7 @@
 
 ---
 
-## 一、已交付（截至 v0.10.13）
+## 一、已交付（截至 v0.11.0）
 
 ### 1. 进程抽象层 —— AgentEngine 接口
 
@@ -189,7 +189,7 @@ PR-1/PR-2 把会话运行时状态收进 `AgentEngine` 接口。骨架版 `Sidec
 
 市场搜索打 `https://registry.npmjs.org/-/v1/search`，查询串始终带 `keywords:pi-package`（不带时 314632 条垃圾，带上 13021 条真 pi 插件）。安装走 pi SDK 的 `DefaultPackageManager.installAndPersist` —— 装完下次会话 `resolve()` 自动发现 `extensions/skills/prompts/themes`，「安装即同步可用」这条链 SDK 本来就通，缺的只是发现。
 
-UI 卡片是声明式的：包在 `package.json` 的 `pi.ui` 数组里写 `{id, kind: "status-card", title, body?, href?}`，Plugins 详情页渲染成纯文本卡 + 外链。选声明式而非「插件跑代码注册 React 组件」，理由与 #22 真隔离同一个：跨进程组件、iframe 沙箱、样式隔离、生命周期四件高危事项，先证明链路走得通。校验规则：只认 `status-card`、`href` 白名单仅 http/https（`javascript:` 丢弃但保留卡片）、同包重复 id 去重、单包上限 12 条；任何非法条目静默丢弃，不让一个写错的插件把 `/api/plugins` 打成 500。
+UI 卡片是声明式的：包在 `package.json` 的 `pi.ui` 数组里写 `{id, kind: "status-card", title, body?, href?}`，Plugins 详情页渲染成纯文本卡 + 外链。选声明式而非「插件跑代码注册 React 组件」，理由与 #24 真隔离同一个：跨进程组件、iframe 沙箱、样式隔离、生命周期四件高危事项，先证明链路走得通。校验规则：只认 `status-card`、`href` 白名单仅 http/https（`javascript:` 丢弃但保留卡片）、同包重复 id 去重、单包上限 12 条；任何非法条目静默丢弃，不让一个写错的插件把 `/api/plugins` 打成 500。
 
 ---
 ### 15. PiD 改名 + 图标
@@ -266,11 +266,44 @@ npm 包名 `pid`（无 scope）、Tauri identifier `com.rebotan.pid`、release �
 
 
 
+### 22. relay 移除 + 0.10.14 安全补丁与性能修复
+
+| 项 | 值 |
+|---|---|
+| commit | `34278874`（relay 移除，−5275 行）、`1a6eb095`（安全）、`687a644a`（性能）、`cfb50990`（安全 + SDK 1.5.2） |
+| 文件 | `proxy.ts`、`desktop/server-launcher.cjs`、`relay/`、`relay-shell/`、`lib/relay/`、`app/api/relay/`、`lib/tool-policy.ts` |
+| 解锁 | Tailscale / LAN 模式下密码门不可绕过；审批规则重启后仍在 |
+
+**relay 全删**：加密中继（Noise IK + 手机壳 + 隧道 Service Worker）判定为设计错误 —— 一个需要自建服务器的通道，维护成本高于 Tailscale Serve 能给的收益。删掉 `relay/`、`relay-shell/`、`lib/relay/`、`app/api/relay/`、`components/RelaySection.tsx` 与 `relay:shell` script、`qrcode-generator` 依赖、test glob 里的 `relay/**`。只留 `isRelayedFromAnotherMachine`，Tailscale Serve 也走它。
+
+**安全**：Next 对带 `x-prerender-revalidate` 头且匹配 `previewModeId` 的请求跳过 middleware，而该值在 `.next-desktop/prerender-manifest.json` 里可读 —— 暴露到 LAN 时等于绕过 `proxy.ts` 的密码门。修法：launcher 剥掉该头，并在每次启动随机化三个 preview secret（`scripts/server-launcher-preview-secrets.test.mjs` 守着）。
+
+**审批持久化**：`lib/tool-policy.ts` 的规则不再只存内存，落 `~/.pi/agent/pi-web/settings.json` 的 `toolPolicyRules`（生产中 `FileToolPolicyStore`，测试用 `InMemoryToolPolicyStore`）。roadmap 早前把这条列成「已知缺口」，已在此版本关闭。
+
+### 23. 上游同步第四轮 —— 444 commit（v0.11.0）
+
+| 项 | 值 |
+|---|---|
+| PR | #13 → merge commit `21d3d716` |
+| 规模 | 522 文件，+41823 / −3274 |
+| 文件 | `components/AppShell.tsx`、`components/SessionChatPanel.tsx`、`components/SettingsPanel.tsx`、`lib/rpc-manager.ts`、`lib/session-reader.ts`、`app/native-theme.css` |
+| 解锁 | side chats（右栏标签页）、Settings 分区化、Debug 面板、项目 pin、scheduled tasks、Next 16.4.4 |
+
+本轮改用**一次 merge** 而非分批 cherry-pick：444 个 commit 全都改同一批 fork 重灾区文件，逐 commit 移植要把同一次冲突解五遍（`components/AppShell.tsx` 累计 +183/+92/+182 行）。实测 merge 得到 54 文件 / 165 块，约 3 小时解完；cherry-pick 第一个 commit `3bad742d` 单独就有 66 块，且 7 处判成「我们删了、他们改了」（上游把 `lib/session-delete.ts` / `lib/session-fork.ts` / `lib/session-stats-format.ts` 合并进 `lib/session-family.ts` / `lib/session-stats.ts`，改动只能逐行手工移植）。
+
+冲突处置的判据只有一条：**这块是 relay 就留 fork，其余尽量取上游**。`proxy.ts`、`lib/remote-access.ts`、`lib/web-push.ts`、`app/api/push/subscribe/route.ts`、`lib/i18n/locale-plugins.ts` 的冲突块全是上游新引入的 relay 判定，全留 fork；`lib/app-updates.ts` 留 fork 的 `latest.json` 方案（上游仍走 `api.github.com` 的匿名 60/h 限流，即 #19 修掉的那个 bug）。
+
+merge 会把已删的 relay 静默加回来：merge-base `140b4545` 没有 relay 文件，base 无 / ours 无 / theirs 有 → 零冲突地采用 theirs。所以每次 sync 之后都要 `git rm -r -f relay relay-shell lib/relay app/api/relay components/RelaySection.tsx` 并重清 `package.json`。
+
+**测试适配**：上游新代码直接读写 `globalThis.__piSessions`，而 fork 的 `AgentEngine` 已接管这些容器。不改引擎（共享 `Set` 会让 `AgentEngineSidecar` 的委托测试失败），改测试 —— 加 `swapEngineRegistry` / `swapEngineStartLocks` 两个 helper 走 `getEngine()`。全量 4180 测试只剩 5 个 Windows 环境失败（文件符号链接 `EPERM`、`file:///tmp` 缺盘符），CI 在 Linux 上自然通过。
+
+0.11.0 之后的收尾：`d158daa7` 撤掉 `parseReleaseHighlights`（updater manifest 的 `notes` 只是 tauri-action 占位符，`scripts/release-notes.mjs` 又删掉 `### Change` 子标题，解析器永远匹配不到）、`a18a897f` 清掉两处恒真防御并把 `AgentEngine` seam 写进 `docs/agents/fork-sessions.md`。
+
 ---
 
 ### 中优先级（架构演进）
 
-#### 22. SidecarEngine（多 Agent 并行隔离）
+#### 24. SidecarEngine（多 Agent 并行隔离）
 
 | 项 | 值 |
 |---|---|
@@ -281,7 +314,7 @@ npm 包名 `pid`（无 scope）、Tauri identifier `com.rebotan.pid`、release �
 
 **接口与骨架已交付（见已交付 #12）**，这一项剩下的是真跨进程隔离：每 worker 一个 `pi --mode rpc` 子进程（参考 PiDeck/PI-Desktop 思想，不抄代码避 LGPL），`SidecarEngine` 内部把「委托目标引擎」换成「spawn 子进程 + stdio JSON-RPC」。
 
-#### 23. 外部会话导入转换器
+#### 25. 外部会话导入转换器
 
 | 项 | 值 |
 |---|---|
@@ -294,7 +327,7 @@ npm 包名 `pid`（无 scope）、Tauri identifier `com.rebotan.pid`、release �
 
 ### 低优先级（纯 UI / 锦上添花）
 
-#### 24. 事件总线出口：webhook / 飞书
+#### 26. 事件总线出口：webhook / 飞书
 
 | 项 | 值 |
 |---|---|
@@ -305,7 +338,7 @@ npm 包名 `pid`（无 scope）、Tauri identifier `com.rebotan.pid`、release �
 
 订阅 `AgentEventBus`，按规则转发到 webhook。配置存 `~/.pi/agent/webhooks.json`。
 
-#### 25. 用量统计
+#### 27. 用量统计
 
 | 项 | 值 |
 |---|---|
@@ -316,7 +349,7 @@ npm 包名 `pid`（无 scope）、Tauri identifier `com.rebotan.pid`、release �
 
 订阅 usage 事件 → 持久化到 SQLite → 前端统计面板。
 
-#### 26. SSH RemoteEngine
+#### 28. SSH RemoteEngine
 
 | 项 | 值 |
 |---|---|
@@ -327,7 +360,7 @@ npm 包名 `pid`（无 scope）、Tauri identifier `com.rebotan.pid`、release �
 
 `RemoteEngine` 实现 `AgentEngine`，`startSession` SSH 连远程机起 pi sidecar，`send`/`events` 走 SSH 通道。远期。
 
-#### 27. Plan Mode
+#### 29. Plan Mode
 
 | 项 | 值 |
 |---|---|
@@ -338,7 +371,7 @@ npm 包名 `pid`（无 scope）、Tauri identifier `com.rebotan.pid`、release �
 
 启动参数带 mode=plan，agent 只规划不执行，计划确认后切 mode=execute。复用审批管道的「挂起等确认」机制。
 
-#### 28. 上下文蒸发
+#### 30. 上下文蒸发
 
 | 项 | 值 |
 |---|---|
@@ -369,10 +402,9 @@ npm 包名 `pid`（无 scope）、Tauri identifier `com.rebotan.pid`、release �
 
 | 缺口 | 现状 |
 |---|---|
-| **审批规则不持久** | `lib/tool-policy.ts` 的 `InMemoryToolPolicyStore` 只存内存，重启即清空 —— 用户设的 `bash → ask` 关掉应用就没了。规则本身不在 settings 里，改动约 30 分钟 |
 | **插件 UI contribution 只有 API** | `/api/plugins/contributions` 有、`listUiContributions` 有，**前端零消费**（只有 `lib/plugin-registry.ts:15` 的注释提到）。真正能用的是 `pi.ui` 声明式卡片（#14） |
 | **SQLite 存储默认关** | `PI_SESSION_STORE=sqlite` 才生效。实测 53 会话 warm FS 14-18ms vs SQLite 47-50ms，优势要到数百会话才显现 |
-| **技术债** | `IDLE_SESSION_CAP_MAX_COUNT = 12` 是死常量（上游只改常量未改实现）；`lib/mcp-host.test.mjs:768` 时间敏感、满负载并发偶发红；`lib/rpc-manager.ts` 的 assembler body 缩进少一层（重排 280 行风险 > 收益，主动不做） |
+| **技术债** | `lib/mcp-host.test.mjs:768` 时间敏感、满负载并发偶发红；`lib/rpc-manager.ts` 的 assembler body 缩进少一层（重排 280 行风险 > 收益，主动不做） |
 
 ---
 
@@ -403,4 +435,6 @@ npm 包名 `pid`（无 scope）、Tauri identifier `com.rebotan.pid`、release �
 | 0.10.11 | 上游 55 commit（`d901af4`：Artifacts 大改、WebView2 恢复、单实例插件）+ Artifacts 触摸目标（`73c4a12`）+ Windows 测试修复（`66a2492`） |
 | 0.10.12 | 更新检测改读 `latest.json`，不再被 GitHub API 限流挡住（`684f582`） |
 | 0.10.13 | 上游 57 commit 分三批：B（`4e67c64f`，20 commit）+ A（`132f222f`，15 commit）+ C pi SDK 1.5.0（`302eda67`） |
-| 未定 | #22~#28 待做项，按优先级逐个 PR |
+| 0.10.14 | relay 全删（`34278874`）+ previewModeId 安全补丁（`1a6eb095`）+ pi SDK 1.5.2 + 审批规则持久化 + 5 个上游 perf（`687a644a`） |
+| 0.11.0 | 上游 444 commit 一次 merge（PR #13 / `21d3d716`：side chats、Settings 分区、Debug 面板、项目 pin、scheduled tasks、Next 16.4.4） |
+| 未定 | #24~#30 待做项，按优先级逐个 PR |
