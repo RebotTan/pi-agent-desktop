@@ -8,8 +8,9 @@
 // 与主进程包装器的差异：
 // - isChat* / hasSuppressedCompletionNotifications / getPendingPromptPreview 等
 //   策略谓词在跨进程侧是静态属性（启动时由 assembler 传入），不是每次 RPC 查询。
-// - waitUntilReady / beginExtensionBinding / evictIfDiskAhead 对 RPC 桩是 no-op
-//   （这些是主进程本地的扩展绑定与磁盘检查，worker 侧不需要）。
+// - waitUntilReady 等 start 的 RPC 回来再问 worker（worker 侧要跑一遍真装配，
+//   不是毫秒级）；beginExtensionBinding / evictIfDiskAhead 是主进程本地的扩展绑定
+//   与磁盘检查，worker 侧不需要，保持 no-op。
 
 import type { AgentEvent } from "./rpc-manager";
 import type { EventListener, SessionHandle } from "./session-handle";
@@ -24,6 +25,8 @@ export interface RpcSessionHandleOptions {
   readonly chatWorkspace?: boolean;
   readonly chatUnlocked?: boolean;
   readonly suppressCompletionNotifications?: boolean;
+  /** 原样转发给 worker 的 session.start 参数（sessionFile / toolNames / initialModel…）。 */
+  readonly startParams?: Record<string, unknown>;
 }
 
 export class RpcSessionHandle implements SessionHandle {
@@ -40,7 +43,14 @@ export class RpcSessionHandle implements SessionHandle {
   private running = false;
   private destroyEmitted = false;
   private realSessionId: string | null = null;
-  private readonly policy: Required<Omit<RpcSessionHandleOptions, "sessionId" | "cwd">>;
+  private startPromise: Promise<unknown> = Promise.resolve();
+  private readonly policy: {
+    chatOnly: boolean;
+    chatWorkspace: boolean;
+    chatUnlocked: boolean;
+    suppressCompletionNotifications: boolean;
+  };
+  private readonly startParams: Record<string, unknown>;
 
   constructor(worker: WorkerProcess, options: RpcSessionHandleOptions) {
     this.worker = worker;
@@ -52,6 +62,7 @@ export class RpcSessionHandle implements SessionHandle {
       chatUnlocked: options.chatUnlocked ?? false,
       suppressCompletionNotifications: options.suppressCompletionNotifications ?? false,
     };
+    this.startParams = { ...options.startParams };
     worker.onMessage(this.sessionId, (message) => this.handleWorkerMessage(message as { type: string; id?: number; event?: AgentEvent; result?: unknown; error?: { message: string } }));
     worker.onExit(() => this.handleWorkerExit());
   }
@@ -100,8 +111,9 @@ export class RpcSessionHandle implements SessionHandle {
   }
 
   start(): void {
-    void this.request("session.start", {
+    this.startPromise = this.request("session.start", {
       cwd: this.cwd,
+      ...this.startParams,
       chatOnly: this.policy.chatOnly,
       chatWorkspace: this.policy.chatWorkspace,
       chatUnlocked: this.policy.chatUnlocked,
@@ -149,6 +161,7 @@ export class RpcSessionHandle implements SessionHandle {
   }
 
   async waitUntilReady(): Promise<void> {
+    await this.startPromise;
     await this.request("wait_until_ready");
   }
 
