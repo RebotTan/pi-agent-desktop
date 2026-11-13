@@ -58,7 +58,6 @@ import {
 } from "./subagent-extension";
 import {
   listSubagentProfiles,
-  hasSubagentResourceSnapshot,
   readSubagentRun,
   readSubagentSessionResources,
   settleOrphanedSubagentStatus,
@@ -69,7 +68,6 @@ import {
 import {
   hasSideMetadata,
   readSideRelation,
-  sideToolNames,
 } from "./side-session";
 import { SIDE_SESSION_NAME, sideChatNameFrom } from "./session-family";
 import { createSubagentController, getLiveSubagentStatus, hasUnsettledSubagentRun } from "./subagent-runtime";
@@ -98,15 +96,13 @@ import {
   validateSessionToolSelection,
 } from "./session-tool-selection";
 import {
-  createChatFolder,
-  ensureChatCwd,
   isChatFolderPath,
-  isChatRootPath,
   isChatWorkspacePath,
 } from "./chat-workspace";
-import { appendChatUnlock, readChatUnlocked } from "./chat-unlock";
+import { appendChatUnlock } from "./chat-unlock";
 import { saveAttachedFilesToFolder } from "./chat-attachment-files";
 import { deriveSessionPolicy, type SessionPolicy } from "./session-policy";
+import { collectSessionStartParams } from "./session-start-params";
 import { chatInstructionsSection, readChatSettings, resolveChatStartDefaults } from "./chat-settings";
 import { ChatFileGrants, isNetworkExposedServer } from "./chat-file-access";
 import { createChatDownloadsExtension } from "./chat-downloads-tool";
@@ -3611,65 +3607,27 @@ export async function startRpcSession(
   // PR-2: 并发协调（existing 复用 / inflight 合并 / closing-wait 排队 / 锁管理）
   // 收进 getEngine().startSession；本函数只提供「装配」这个引擎域之外的 assembler。
   return getEngine().startSession(sessionId, async () => {
-    let sessionManager: SessionManager;
-  if (sessionFile) {
-    sessionManager = SessionManager.open(sessionFile, undefined);
-  } else {
-    if (!cwd) throw new Error("cwd is required for a new session");
-    // A new chat is requested with the chat root; it gets a folder of its own.
-    sessionManager = SessionManager.create(
-      isChatRootPath(cwd) ? await createChatFolder() : cwd,
-      undefined,
-      options.parentSession ? { parentSession: options.parentSession } : undefined,
-    );
-  }
-  const sessionCwd = sessionManager.getCwd();
-  const sessionEntries = sessionManager.getEntries() as unknown as SessionEntry[];
-  const chatWorkspace = isChatWorkspacePath(sessionCwd);
-  const chatFolder = isChatFolderPath(sessionCwd);
-  if (chatWorkspace) await ensureChatCwd(sessionCwd);
-  // Unlocking lets a chat use the computer, so it is a local choice: a server that other
-  // machines can reach never honours it.
-  const chatUnlocked = chatFolder
-    && !isNetworkExposedServer()
-    && readChatUnlocked(sessionEntries);
-  const hasPersistedSubagentSnapshot = sessionFile && !chatWorkspace && hasSubagentResourceSnapshot(sessionEntries);
-  const subagentResources = sessionFile && !chatWorkspace
-    ? readSubagentSessionResources(sessionEntries)
-    : null;
-  if (hasPersistedSubagentSnapshot && !subagentResources) {
-    throw new Error("Invalid subagent resource snapshot");
-  }
-  const persistedToolNames = subagentResources
-    ? undefined
-    : readSessionToolSelection(sessionEntries);
-  // A chat has no tool preset to pick: it loads what a project session loads, and the
-  // chat policy extension withholds the coding tools (lib/chat-workspace-policy.ts).
-  const pinnedToolNames = chatWorkspace
-    ? undefined
-    : subagentResources?.tools ?? persistedToolNames ?? requestedToolNames;
-  if (!chatWorkspace && !subagentResources && persistedToolNames === undefined && requestedToolNames !== undefined) {
-    appendSessionToolSelection(sessionManager, requestedToolNames);
-  }
-  const subagentLoadsResources = Boolean(
-    subagentResources?.loadExtensions || subagentResources?.loadSkills || subagentResources?.codemode || subagentResources?.mcp,
-  );
-  const sessionPolicy = deriveSessionPolicy({
-    chatWorkspace,
-    chatUnlocked,
-    chatOnly: pinnedToolNames?.length === 0 && !subagentLoadsResources,
-  });
-  const chatOnly = sessionPolicy.kind === "chat-only";
-  // A side chat (ADR 0007) starts as a normal session, or as Chat only, with fewer tools.
-  // A chat folder never holds one.
-  const isSideChat = !chatWorkspace && hasSideMetadata(sessionEntries);
-  if (isSideChat && !readSideRelation(sessionEntries)) throw new Error("Invalid side chat metadata");
-  const sideChatTools = isSideChat && !chatOnly;
-  const selectedToolNames = sideChatTools
-    ? sideToolNames(pinnedToolNames, sessionManager.getBranch().flatMap((entry) => (
-        entry.type === "message" && entry.message.role === "system" ? [entry.message] : []
-      )))
-    : pinnedToolNames;
+    // 决策段（读会话文件、chat 判定、policy 推导、tool 取舍）搬到了
+    // lib/session-start-params.ts：跨进程引擎需要同一份结果（ADR 0002）。
+    const collected = await collectSessionStartParams({
+      sessionFile,
+      cwd,
+      parentSession: options.parentSession,
+      requestedToolNames,
+    });
+    const sessionManager = collected.sessionManager;
+    const {
+      sessionCwd,
+      chatWorkspace,
+      chatFolder,
+      chatUnlocked,
+      subagentResources,
+      subagentLoadsResources,
+      chatOnly,
+      isSideChat,
+      sideChatTools,
+      selectedToolNames,
+    } = collected.params;
   const finishStartingSession = trackStartingSession(sessionCwd);
   try {
     // Some extensions access the SDK's global theme even outside the terminal UI.
