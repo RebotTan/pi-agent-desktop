@@ -36,7 +36,9 @@ export interface SessionHandle {
   onEvent(listener: EventListener): () => void;
   onDestroy(cb: () => void): void;
 
-  // --- 策略谓词（跨进程桩可先返回 false，编排器需要时再补真值）---
+  // --- 策略谓词 ---
+  // 本地实现是权威值。RPC 桩必须给出与本地一致的结果；尚未实现时返回的固定值
+  // 只服务于开发期测试，出现在生产路径上即为缺陷，不能当作「功能已支持」。
   isChatOnly(): boolean;
   isChatWorkspace(): boolean;
   isChat(): boolean;

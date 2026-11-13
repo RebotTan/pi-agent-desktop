@@ -303,20 +303,22 @@ merge 会把已删的 relay 静默加回来：merge-base `140b4545` 没有 relay
 
 ### 中优先级（架构演进）
 
-#### 24. SidecarEngine（多 Agent 并行隔离）
+#### 24. ProcessAgentEngine（完整主会话进程隔离）
 
 | 项 | 值 |
 |---|---|
 | seam | `AgentEngine` 接口（PR-1/2） |
-| 解锁 | Worker Session 编排、Ask 并行问询、独立完整会话/独立 .jsonl/隔离上下文 |
-| 投入 | 1–2 周 |
+| 本期目标 | 完整主会话迁入独立 worker，保留扩展 UI、审批、MCP、任务与持久化；不以 Ask 替代 |
+| 交付方式 | 按 P0–P6 的行为验收推进，生产开关最后接入；不再沿用未经验证的 1–2 周估计 |
 | 优先级 | ★★☆ |
 
-**跨进程引擎层已交付（2026-11，ADR 0002）**：`lib/session-handle.ts`（接口）、`lib/session-handle-rpc.ts`（RPC 桩）、`lib/worker-process-host.ts`（spawn + 预热池）、`lib/worker-process-main.mjs`（worker 入口）、`lib/agent-engine-process.ts`（`ProcessAgentEngine`，继承 `InProcessAgentEngine` 的启动协议，只把装配换成 spawn）。
+**实施方案已定稿，生产仍是 `InProcessAgentEngine`。** 见 [完整实施方案](agents/process-agent-engine.md)：调用迁移清单、父/worker 服务归属、通信与故障处理、桌面产物、阶段验收及回退条件。
 
-**worker 侧已经是真 pi 会话（0.11 之后）**：`lib/worker-process-main.mjs` 首次 `session.start` 时用 jiti 加载 `lib/rpc-manager.ts`，直接复用整份 `startRpcSession`（该文件无 `next/`、`@/app` 依赖），事件 / `send` / `shutdown` / `destroy` 全部转发给真 `AgentSessionWrapper`。启动入参经 `AgentEngine.startSession` 的 `options.startParams`（`{ sessionFile, cwd, ...options }`，由 `lib/rpc-manager.ts` 传）交给 worker，worker 自己跑一遍 `collectSessionStartParams`。实测：worker 起会话 ~1.8s（jiti 转译 ~5s 由预热池承担），空 `agentDir` 下 `prompt` 的 `No API key` 错误能原样回传。
+**已交付基础层（2026-11）**：`lib/session-handle.ts`、`lib/session-handle-rpc.ts`、`lib/worker-process-host.ts`、`lib/worker-process-main.mjs`、`lib/agent-engine-process.ts`。worker 在首次 `session.start` 时用 jiti 加载 `lib/rpc-manager.ts`，运行真 `AgentSessionWrapper`；启动入参通过 `options.startParams` 传递，worker 独自执行 `collectSessionStartParams`。已有 11 项 worker 测试通过，不等于生产功能已经等价。
 
-**尚未打通：生产路径仍走 `InProcessAgentEngine`。** 阻塞点不是开关，是类型契约：`getEngine()` 的类型、`rpc-manager` 的 `/api/agent/**` 路由都按 `AgentSessionWrapper` 的**内部状态**写（`pendingUiRequests`、扩展 widget、任务快照、auto title、prompt 准入队列、MCP host…，40+ 私有字段），而 `SessionHandle` 只覆盖 20 个方法。要切换得先把这些状态搬进接口（或让路由显式 fail-fast），属独立一轮。`ProcessAgentEngine` 目前供「独立会话」直接使用：`getProcessEngine().startSession(id, noop, { startParams })` 返回 `RpcSessionHandle`。
+**预热的真实范围**：当前 `ready` 先于 SDK 按需加载，只证明进程已启动。约 1.8s 起会话与约 5s 首次 jiti 加载来自不同测量，不能声称预热已承担转译；冷启动、进程预热和 SDK 预加载需分别测量。
+
+**剩余工作**：按真实外部调用补公共契约，保留未 flush 的内存会话读取；桥接审批、插件/配置与全局服务；改用专用 IPC，补齐生命周期、崩溃清理和打包验证。私有状态留在 worker，不搬“40+ 私有字段”，也不以空实现、固定值或路由 fail-fast 降级现有功能。先完成 P0–P5，再接生产选择与显式回退（P6）；0.11.1 不随方案自动发布。
 
 #### 25. 外部会话导入转换器
 
