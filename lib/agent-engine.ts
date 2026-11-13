@@ -18,7 +18,7 @@ import type { SessionHandle } from "./session-handle";
 import type { AgentSessionWrapper } from "./rpc-manager";
 
 /** closingSessionWait 无 options.shutdownDeadlineMs 时的兜底（与 pi-web 默认一致）。 */
-const DEFAULT_SHUTDOWN_DEADLINE_MS = 5_000;
+export const DEFAULT_SHUTDOWN_DEADLINE_MS = 5_000;
 
 /** 运行中会话 id 集合变化的监听器。 */
 export type RunningSessionIdsListener = (ids: string[]) => void;
@@ -91,16 +91,15 @@ export interface AgentEngine<H extends SessionHandle = AgentSessionWrapper> {
  * 扩展清理是最后的尽力而为）；
  * SIGINT/SIGTERM → allSettled shutdown。
  */
-export class InProcessAgentEngine implements AgentEngine<AgentSessionWrapper> {
-  private readonly sessions = new Map<string, AgentSessionWrapper>();
-  private readonly startLockMap = new Map<string, StartLock>();
+export class InProcessAgentEngine<H extends SessionHandle = AgentSessionWrapper>
+  implements AgentEngine<H>
+{
+  private readonly sessions = new Map<string, H>();
+  private readonly startLockMap = new Map<string, StartLock<H>>();
   private readonly startingCwdMap = new Map<string, number>();
   private readonly runningListenerSet = new Set<RunningSessionIdsListener>();
   /** 关闭中 wrapper 的 waitUntilDisposed 缓存（bounded，见 closingSessionWait）。 */
-  private readonly closingWaits = new WeakMap<
-    AgentSessionWrapper,
-    { done: boolean; promise: Promise<void> }
-  >();
+  private readonly closingWaits = new WeakMap<H, { done: boolean; promise: Promise<void> }>();
 
   constructor() {
     const destroy = () => this.sessions.forEach((session) => session.destroy());
@@ -116,10 +115,10 @@ export class InProcessAgentEngine implements AgentEngine<AgentSessionWrapper> {
   }
 
   // --- session registry ---
-  getSession(sessionId: string): AgentSessionWrapper | undefined {
+  getSession(sessionId: string): H | undefined {
     return this.sessions.get(sessionId);
   }
-  setSession(sessionId: string, wrapper: AgentSessionWrapper): void {
+  setSession(sessionId: string, wrapper: H): void {
     this.sessions.set(sessionId, wrapper);
   }
   deleteSession(sessionId: string): void {
@@ -128,24 +127,24 @@ export class InProcessAgentEngine implements AgentEngine<AgentSessionWrapper> {
   sessionCount(): number {
     return this.sessions.size;
   }
-  allSessions(): AgentSessionWrapper[] {
+  allSessions(): H[] {
     return Array.from(this.sessions.values());
   }
-  allEntries(): Array<[string, AgentSessionWrapper]> {
+  allEntries(): Array<[string, H]> {
     return Array.from(this.sessions.entries());
   }
 
   // --- start locks ---
-  getStartLock(sessionId: string): StartLock | undefined {
+  getStartLock(sessionId: string): StartLock<H> | undefined {
     return this.startLockMap.get(sessionId);
   }
-  setStartLock(sessionId: string, lock: StartLock): void {
+  setStartLock(sessionId: string, lock: StartLock<H>): void {
     this.startLockMap.set(sessionId, lock);
   }
   deleteStartLock(sessionId: string): void {
     this.startLockMap.delete(sessionId);
   }
-  allStartLocks(): Array<[string, StartLock]> {
+  allStartLocks(): Array<[string, StartLock<H>]> {
     return Array.from(this.startLockMap.entries());
   }
 
@@ -162,9 +161,9 @@ export class InProcessAgentEngine implements AgentEngine<AgentSessionWrapper> {
   // --- 会话启动协调 ---
   async startSession(
     sessionId: string,
-    assembler: () => Promise<SessionStartResult>,
+    assembler: () => Promise<SessionStartResult<H>>,
     options?: { shutdownDeadlineMs?: number },
-  ): Promise<SessionStartResult> {
+  ): Promise<SessionStartResult<H>> {
     const existing = this.sessions.get(sessionId);
     if (existing?.isAlive()) return { session: existing, realSessionId: sessionId };
 
@@ -174,7 +173,7 @@ export class InProcessAgentEngine implements AgentEngine<AgentSessionWrapper> {
     const closingWait = this.closingSessionWait(sessionId, options?.shutdownDeadlineMs ?? DEFAULT_SHUTDOWN_DEADLINE_MS);
     if (closingWait) {
       // Concurrent starts share this lock, then the one start that follows it.
-      const waiting: Promise<SessionStartResult> = closingWait.then(() => {
+      const waiting: Promise<SessionStartResult<H>> = closingWait.then(() => {
         if (this.startLockMap.get(sessionId) === waiting) this.startLockMap.delete(sessionId);
         return this.startSession(sessionId, assembler, options);
       });
@@ -227,10 +226,10 @@ export class InProcessAgentEngine implements AgentEngine<AgentSessionWrapper> {
   }
 
   // --- raw 注册表 ---
-  registry(): Map<string, AgentSessionWrapper> {
+  registry(): Map<string, H> {
     return this.sessions;
   }
-  startLocks(): Map<string, StartLock> {
+  startLocks(): Map<string, StartLock<H>> {
     return this.startLockMap;
   }
   startingCwds(): Map<string, number> {

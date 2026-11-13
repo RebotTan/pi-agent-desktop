@@ -312,7 +312,7 @@ merge 会把已删的 relay 静默加回来：merge-base `140b4545` 没有 relay
 | 投入 | 1–2 周 |
 | 优先级 | ★★☆ |
 
-**接口与骨架已交付（见已交付 #12）**，这一项剩下的是真跨进程隔离：每 worker 一个 `pi --mode rpc` 子进程（参考 PiDeck/PI-Desktop 思想，不抄代码避 LGPL），`SidecarEngine` 内部把「委托目标引擎」换成「spawn 子进程 + stdio JSON-RPC」。
+**跨进程引擎层已交付（2026-11，ADR 0002）**：`lib/session-handle.ts`（接口）、`lib/session-handle-rpc.ts`（RPC 桩）、`lib/worker-process-host.ts`（spawn + 预热池）、`lib/worker-process-main.mjs`（worker 入口）、`lib/agent-engine-process.ts`（`ProcessAgentEngine`，继承 `InProcessAgentEngine` 的启动协议，只把装配换成 spawn）。**剩下的**是 worker 侧接真 pi SDK（`lib/worker-process-main.mjs` 三处 TODO：`createAgentSessionFromServices`、事件桥、`session.shutdown()`），以及 assembler 参数化（当前 `startSession` 不执行父进程 assembler，启动参数走 `SpawnOptionsResolver`）。参考 PiDeck/PI-Desktop 思想，不抄代码避 LGPL。
 
 #### 25. 外部会话导入转换器
 
