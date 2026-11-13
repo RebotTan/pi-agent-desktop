@@ -73,7 +73,11 @@ export interface AgentEngine<H extends SessionHandle = AgentSessionWrapper> {
   startSession(
     sessionId: string,
     assembler: () => Promise<SessionStartResult<H>>,
-    options?: { shutdownDeadlineMs?: number },
+    options?: {
+      shutdownDeadlineMs?: number;
+      /** 跨进程引擎的启动输入（rpc-manager 的 startRpcSession 入参）；进程内引擎忽略。 */
+      startParams?: Record<string, unknown>;
+    },
   ): Promise<SessionStartResult<H>>;
   /**
    * 等待 `sessionId` 正在关闭的 wrapper 释放，或 null（无关闭中 wrapper）。
@@ -162,7 +166,7 @@ export class InProcessAgentEngine<H extends SessionHandle = AgentSessionWrapper>
   async startSession(
     sessionId: string,
     assembler: () => Promise<SessionStartResult<H>>,
-    options?: { shutdownDeadlineMs?: number },
+    options?: { shutdownDeadlineMs?: number; startParams?: Record<string, unknown> },
   ): Promise<SessionStartResult<H>> {
     const existing = this.sessions.get(sessionId);
     if (existing?.isAlive()) return { session: existing, realSessionId: sessionId };

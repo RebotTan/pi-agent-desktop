@@ -111,20 +111,21 @@ export class RpcSessionHandle implements SessionHandle {
   }
 
   start(): void {
-    this.startPromise = this.request("session.start", {
+    const startRequest = this.request("session.start", {
       cwd: this.cwd,
       ...this.startParams,
       chatOnly: this.policy.chatOnly,
       chatWorkspace: this.policy.chatWorkspace,
       chatUnlocked: this.policy.chatUnlocked,
-    })
-      .then((result) => {
-        const realSessionId = (result as { realSessionId?: unknown } | undefined)?.realSessionId;
-        if (typeof realSessionId === "string" && realSessionId) this.realSessionId = realSessionId;
-      })
-      .catch((error) => {
-        console.error(`[sidecar] start failed for ${this.sessionId}:`, error);
-      });
+    }).then((result) => {
+      const realSessionId = (result as { realSessionId?: unknown } | undefined)?.realSessionId;
+      if (typeof realSessionId === "string" && realSessionId) this.realSessionId = realSessionId;
+    });
+    // 记日志但不吞错：start 失败时 waitUntilReady 要把它抛给调用方，而不是去问一个不存在的会话。
+    startRequest.catch((error) => {
+      console.error(`[sidecar] start failed for ${this.sessionId}:`, error);
+    });
+    this.startPromise = startRequest;
   }
 
   async shutdown(): Promise<void> {

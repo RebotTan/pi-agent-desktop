@@ -3985,6 +3985,10 @@ export async function startRpcSession(
     finishStartingSession();
   }
     },
-    { shutdownDeadlineMs: SESSION_SHUTDOWN_DEADLINE_MS + CLOSING_SESSION_WAIT_MARGIN_MS },
+    {
+      shutdownDeadlineMs: SESSION_SHUTDOWN_DEADLINE_MS + CLOSING_SESSION_WAIT_MARGIN_MS,
+      // 跨进程引擎拿不到 assembler 的闭包，需要原始入参自己跑决策段。
+      startParams: { sessionFile, cwd, ...options },
+    },
   );
 }

@@ -30,7 +30,10 @@ export class ProcessAgentEngine extends InProcessAgentEngine<RpcSessionHandle> {
   override async startSession(
     sessionId: string,
     assembler: () => Promise<SessionStartResult<RpcSessionHandle>>,
-    options?: { shutdownDeadlineMs?: number },
+    options?: {
+      shutdownDeadlineMs?: number;
+      startParams?: Record<string, unknown>;
+    },
   ): Promise<SessionStartResult<RpcSessionHandle>> {
     const existing = this.getSession(sessionId);
     if (existing?.isAlive()) {
@@ -56,7 +59,11 @@ export class ProcessAgentEngine extends InProcessAgentEngine<RpcSessionHandle> {
     const starting = (async () => {
       const spawnOptions = this.resolveSpawnOptions(sessionId);
       const worker = await getWorkerProcessHost().spawnWorker(spawnOptions);
-      const handle = new RpcSessionHandle(worker, { sessionId, cwd: spawnOptions.cwd });
+      const handle = new RpcSessionHandle(worker, {
+        sessionId,
+        cwd: spawnOptions.cwd,
+        startParams: options?.startParams,
+      });
       this.setSession(sessionId, handle);
       handle.start();
       await handle.waitUntilReady();
