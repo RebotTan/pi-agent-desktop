@@ -377,6 +377,7 @@ test("live detail and state routes work without a persisted JSONL file", async (
   replaceRegistry(new Map([[id, {
     isAlive: () => true,
     isRunning: () => true,
+    readSession: () => sessionManager,
     inner: { sessionManager },
     sessionFile: sessionManager.getSessionFile(),
     sessionId: id,
@@ -433,6 +434,7 @@ test("session detail returns a gzip-compressed response when the client accepts 
   replaceRegistry(new Map([[id, {
     isAlive: () => true,
     isRunning: () => false,
+    readSession: () => sessionManager,
     inner: { sessionManager },
     sessionFile: sessionManager.getSessionFile(),
     sessionId: id,

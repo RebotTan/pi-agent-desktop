@@ -37,6 +37,7 @@ function register(manager) {
     isAlive: () => true,
     isRunning: () => false,
     evictIfDiskAhead: () => false,
+    readSession: () => manager,
     inner: { sessionManager: manager, setSessionName: (name) => manager.appendSessionInfo(name) },
   };
     getEngine().registry().set(id, wrapper);

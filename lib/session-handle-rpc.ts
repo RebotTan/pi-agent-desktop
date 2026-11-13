@@ -13,8 +13,13 @@
 //   与磁盘检查，worker 侧不需要，保持 no-op。
 
 import type { AgentEvent } from "./rpc-manager";
-import type { EventListener, SessionHandle } from "./session-handle";
+import type { EventListener, SessionHandle, SessionModelLookup, SessionReadView } from "./session-handle";
 import type { WorkerProcess } from "./worker-process-host";
+
+/** 跨进程侧尚未实现的方法：抛错，绝不返回假值让调用方当作「功能已支持」。 */
+function notYetAvailable(method: string): Error {
+  return new Error(`RpcSessionHandle.${method}() is not available until the worker snapshot channel lands (P2)`);
+}
 
 let nextRequestId = 1;
 
@@ -198,6 +203,20 @@ export class RpcSessionHandle implements SessionHandle {
 
   getPendingPromptPreview(): { text: string; timestamp: number } | null {
     return null;
+  }
+
+  // P1 阶段不提供服务端快照通道：抛错而不是返回空 manager/空标题，误用会立刻
+  // 暴露，而不是让 HTTP 读到一个假的空会话。P2 的 IPC 快照回执实现这三个方法。
+  readSession(): SessionReadView {
+    throw notYetAvailable("readSession");
+  }
+
+  generateTitle(): Promise<{ title: string; usage?: unknown }> {
+    return Promise.reject(notYetAvailable("generateTitle"));
+  }
+
+  modelLookup(): SessionModelLookup | undefined {
+    throw notYetAvailable("modelLookup");
   }
 
   // --- 内部 ---

@@ -143,7 +143,7 @@ test("reads a live manager's selected branch and refreshes settings when only it
     { type: "thinking_level_change", id: "other-level", parentId: "other", timestamp: at(3), thinkingLevel: "high" },
   ]);
   const manager = SessionManager.open(path);
-  getEngine().registry().set("stats-branches", { isAlive: () => true, inner: { sessionManager: manager } });
+  getEngine().registry().set("stats-branches", { isAlive: () => true, readSession: () => manager });
   const read = async () => (await (await post({ ids: ["stats-branches"] })).json()).stats["stats-branches"];
   assert.deepEqual((await read()).model, { provider: "other-provider", modelId: "other-model" });
   assert.equal((await read()).thinkingLevel, "high");

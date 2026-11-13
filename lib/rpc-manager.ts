@@ -30,6 +30,7 @@ import { isVerboseLogging } from "../bin/pi-web-options.js";
 import { hasActiveSessionLivenessProvider } from "./session-liveness";
 import { IDLE_SESSION_CAP_GRACE_MS, selectIdleSessionsToEvict, type IdleSessionCandidate, type IdleSessionCapLimits } from "./idle-session-cap";
 import type { AgentSession, LoadExtensionsResult, SlashCommandInfo } from "@earendil-works/pi-coding-agent";
+import type { SessionHandle, SessionModelLookup, SessionReadView } from "./session-handle";
 import { PRODUCT_NAME } from "./branding";
 import type { AgentSessionLike, ExtensionUiContextLike, NavigateTreeOptions, ToolInfo } from "./pi-types";
 import type {
@@ -419,7 +420,7 @@ function isCompactionInProgressError(error: unknown): boolean {
 // Wraps AgentSession with the same interface the rest of the app expects
 // ============================================================================
 
-export class AgentSessionWrapper {
+export class AgentSessionWrapper implements SessionHandle {
   // A Set, not an array: an SSE stream unsubscribes from inside emit() when it
   // closes on session_shutdown, and splicing an array mid-iteration made the
   // next stream miss that same event.
@@ -619,6 +620,25 @@ export class AgentSessionWrapper {
 
   getPendingPromptPreview() {
     return this.pendingPromptPreview;
+  }
+
+  /**
+   * The live manager: HTTP read paths must see entries the runtime has not
+   * flushed yet. Read-only in practice — a caller that appends opens the file
+   * itself (openSessionManager(path, { mutable: true })).
+   */
+  readSession(): SessionReadView {
+    return this.inner.sessionManager;
+  }
+
+  /** The session's own model and credentials title it; a caller never holds the SDK session. */
+  generateTitle(): Promise<{ title: string; usage?: unknown }> {
+    return generateSessionTitle(this.inner as unknown as AgentSession);
+  }
+
+  /** Prices for the cache-miss notices; undefined once the runtime is gone. */
+  modelLookup(): SessionModelLookup | undefined {
+    return this.isAlive() ? this.inner.modelRuntime : undefined;
   }
 
   /** A project session pinned to an empty tool list (exact prompt, nothing loaded). */

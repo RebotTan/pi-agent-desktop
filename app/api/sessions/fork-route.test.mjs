@@ -87,7 +87,7 @@ function fakeWrapper({ sessionFile, leafId, running, knownIds }) {
     isAlive: () => true,
     isRunning: () => running,
     sessionFile,
-    inner: { sessionManager: { getLeafId: () => leafId, getEntry: (entryId) => (knownIds.includes(entryId) ? { id: entryId } : undefined) } },
+    readSession: () => ({ getLeafId: () => leafId, getEntry: (entryId) => (knownIds.includes(entryId) ? { id: entryId } : undefined) }),
   };
 }
 

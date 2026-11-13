@@ -118,11 +118,14 @@ P0 盘点结果（2026-11-13，仅非测试调用；`lib/rpc-manager.ts` 内部�
 
 ### P1 — 把路由从 SDK 对象中分离
 
-- [ ] 按真实调用扩充 `SessionHandle` 的快照/命令边界，让 `AgentSessionWrapper` 首先实现它；`getEngine()`、`getRpcSession()` 及 `SetRpcSessionToolsResult` 不再强制暴露具体 wrapper。
-- [ ] 把 session/context/stats/reference/fork/title/rename 改成语义读写；替换返回 manager 的 `openSessionManagerForRead` 跨层用法。
+- [x] 按真实调用扩充 `SessionHandle`：`readSession(): SessionReadView`（`Pick<SessionManager, getCwd|getSessionId|getSessionFile|getLeafId|getEntry|getHeader|getEntries|getTree|getSessionName>`，因为包没有 re-export SDK 内部的 `ReadonlySessionManager`）、`generateTitle()`、`modelLookup()`；`AgentSessionWrapper implements SessionHandle`。RPC 桩对这三个方法抛错，不返回空 manager/空标题。
+- [x] session/context/stats/reference/fork/title/rename 已改成语义读写：路由不再读 `inner`（`app/**` 内 `.inner.` 归零）。rename 走既有的 `renameRpcSession`（等启动/关闭竞态，不再自己判断活会话）；stats 缓存键从 manager 改为 session id；`openSessionManagerForRead` 返回 `SessionReadView`。
+- [ ] 剩余：`getEngine()`/`getRpcSession()` 的返回类型仍写具体 wrapper；`lib/session-replacement.ts`、`lib/subagent-runtime.ts`、`lib/scheduled-tasks/runner.ts` 还直接读 `inner`，需要 `appendCustomEntry`/`writeForkedSession`/子会话控制等语义方法（与 P3 一起做）。
 - [ ] 提取父进程登记/清理与 worker 本地装配，保留启动锁、关闭等待、registry 身份检查和 idle/lease 行为。
 
 验收：生产仍本地引擎；HTTP 层和跨会话聚合不再依赖 `inner`；P0 与现有会话/API测试通过。私有 UI/MCP/prompt 状态仍在 wrapper 内，不为消除类型错误复制它们。
+
+当前：HTTP 读路径（session/context/stats/reference/fork/title/rename）已从 `inner` 迁出，本地引擎行为不变，全量 `4188/4131` 通过（5 个既有 Windows 平台失败、52 skip）。lib 层的三处读与 `getRpcSession()` 返回类型仍未迁移。
 
 ### P2 — 加固真实 worker 通信与生命周期
 

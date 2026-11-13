@@ -19,7 +19,7 @@ export const dynamic = "force-dynamic";
 const MAX_SESSION_STATS_IDS = 200;
 const NO_STORE = { "Cache-Control": "no-store" };
 
-type SessionManagerLike = ReturnType<typeof openSessionManager>;
+type SessionManagerLike = Pick<ReturnType<typeof openSessionManager>, "getEntries" | "getLeafId">;
 
 interface CachedSummary {
   entryCount: number;
@@ -28,7 +28,9 @@ interface CachedSummary {
   summary: SessionUsageSummary;
 }
 
-const summaries = new WeakMap<SessionManagerLike, CachedSummary>();
+// Keyed by session id: the live manager is one object per session, and an id
+// stays the same key when the read comes from disk instead.
+const summaries = new Map<string, CachedSummary>();
 
 function refusal(status: number, error: string) {
   return NextResponse.json({ error }, { status, headers: NO_STORE });
@@ -38,7 +40,7 @@ async function readSummary(id: string): Promise<SessionUsageSummary | null> {
   const rpc = getRpcSession(id);
   let sm: SessionManagerLike;
   if (rpc?.isAlive()) {
-    sm = rpc.inner.sessionManager as SessionManagerLike;
+    sm = rpc.readSession();
   } else {
     const path = await resolveSessionPath(id);
     if (!path) return null;
@@ -47,7 +49,7 @@ async function readSummary(id: string): Promise<SessionUsageSummary | null> {
   const entries = sm.getEntries();
   const lastEntryId = (entries[entries.length - 1] as { id?: string } | undefined)?.id;
   const leafId = sm.getLeafId();
-  const cached = summaries.get(sm);
+  const cached = summaries.get(id);
   if (cached && cached.entryCount === entries.length && cached.lastEntryId === lastEntryId && cached.leafId === leafId) return cached.summary;
 
   const ownEntries = sideOwnEntries(entries);
@@ -59,7 +61,7 @@ async function readSummary(id: string): Promise<SessionUsageSummary | null> {
     totalActiveMs: computeSessionTotalActiveMs(ownEntries as typeof entries),
     ...getSessionSettings(entries as unknown as SessionEntry[], leafId),
   };
-  summaries.set(sm, { entryCount: entries.length, lastEntryId, leafId, summary });
+  summaries.set(id, { entryCount: entries.length, lastEntryId, leafId, summary });
   return summary;
 }
 

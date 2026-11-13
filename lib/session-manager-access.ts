@@ -1,6 +1,7 @@
 import { existsSync } from "fs";
 import { SessionManager } from "@earendil-works/pi-coding-agent";
 import { getRpcSession } from "./rpc-manager";
+import type { SessionReadView } from "./session-handle";
 
 /**
  * SessionManager to read a session id through.
@@ -14,9 +15,9 @@ import { getRpcSession } from "./rpc-manager";
 export function openSessionManagerForRead(
   sessionId: string,
   filePath: string,
-): SessionManager | null {
+): SessionReadView | null {
   if (existsSync(filePath)) return SessionManager.open(filePath);
   const live = getRpcSession(sessionId);
   if (!live?.isAlive()) return null;
-  return live.inner.sessionManager;
+  return live.readSession();
 }

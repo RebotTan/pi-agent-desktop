@@ -15,7 +15,7 @@ import {
   readSessionHeader,
 } from "@/lib/session-reader";
 import { sessionPathKey } from "@/lib/session-path";
-import { abortSubagent, getRpcSession, getRpcSessionInfos } from "@/lib/rpc-manager";
+import { abortSubagent, getRpcSession, getRpcSessionInfos, renameRpcSession } from "@/lib/rpc-manager";
 import { projectTreeForResponse, toSummaryTree } from "@/lib/project-tree";
 import { computeSessionTotalActiveMs } from "@/lib/session-timing";
 import { computeSessionStats } from "@/lib/session-stats";
@@ -61,7 +61,7 @@ export async function GET(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const sm = liveRpc?.inner.sessionManager ?? openSessionManager(resolvedPath!);
+    const sm = liveRpc?.readSession() ?? openSessionManager(resolvedPath!);
     perf?.span("open");
     const filePath = liveRpc?.sessionFile || sm.getSessionFile() || resolvedPath || "";
     const entries = sm.getEntries();
@@ -97,7 +97,7 @@ export async function GET(
     const latestEntry = entries[entries.length - 1] as { id?: string } | undefined;
     const snapshotRevision = computeSessionRevision({
       filePath,
-      sourceId: liveRpc ? `runtime:${String(liveRpc.inner.sessionId)}` : "disk",
+      sourceId: liveRpc ? `runtime:${String(liveRpc.sessionId)}` : "disk",
       entryCount: entries.length,
       latestEntryId: typeof latestEntry?.id === "string" ? latestEntry.id : null,
       leafId: leafId ?? null,
@@ -200,23 +200,21 @@ export async function PATCH(
     // leaves the live one (and GET, which reads it) on the old name, and hangs
     // the entry off a leaf the live tree has moved past. Before the first flush
     // the file is also a stub the runtime is about to write over. So whenever
-    // the session is live, let its own manager record the name. Unlike the
-    // set_session_name command this accepts "", which clears the title.
-    const live = getRpcSession(id);
-    if (live?.isAlive()) {
-      live.inner.setSessionName(name.trim());
+    // the session is live, let its own manager record the name; renameRpcSession
+    // waits out a start or a closing wrapper instead of racing it.
+    // Unlike the set_session_name command this accepts "", which clears the title.
+    const renamed = await renameRpcSession(id, name.trim(), () => {
+      if (!existsSync(filePath)) return false;
+      // PATCH writes via appendSessionInfo — open fresh, bypassing the cache.
+      const sm = openSessionManager(filePath, { mutable: true });
+      sm.appendSessionInfo(name.trim());
+      invalidateSessionManagerCache(filePath);
       invalidateSessionListCache();
-      return NextResponse.json({ ok: true });
-    }
-    if (!existsSync(filePath)) {
+      return true;
+    });
+    if (!renamed) {
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
-
-    // PATCH writes via appendSessionInfo — open fresh, bypassing the cache.
-    const sm = openSessionManager(filePath, { mutable: true });
-    sm.appendSessionInfo(name.trim());
-    invalidateSessionManagerCache(filePath);
-    invalidateSessionListCache();
     return NextResponse.json({ ok: true });
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });
