@@ -887,13 +887,13 @@ export interface PluginUpdateResult {
 
 /**
  * A declarative UI card a package declares in its `package.json` `pi.ui`
- * array (ticket 0023). Only `status-card` is supported and every field is
- * rendered as plain text, so a package can add a line to its Plugins detail
- * without running code.
+ * array (ticket 0023). Any kind string is kept and every field is rendered as
+ * plain text, so a package can add a line to its Plugins detail without
+ * running code; the kind only labels the card.
  */
 export interface PluginUiCard {
   id: string;
-  kind: "status-card";
+  kind: string;
   title: string;
   body?: string;
   href?: string;

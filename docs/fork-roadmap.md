@@ -189,7 +189,7 @@ PR-1/PR-2 把会话运行时状态收进 `AgentEngine` 接口。骨架版 `Sidec
 
 市场搜索打 `https://registry.npmjs.org/-/v1/search`，查询串始终带 `keywords:pi-package`（不带时 314632 条垃圾，带上 13021 条真 pi 插件）。安装走 pi SDK 的 `DefaultPackageManager.installAndPersist` —— 装完下次会话 `resolve()` 自动发现 `extensions/skills/prompts/themes`，「安装即同步可用」这条链 SDK 本来就通，缺的只是发现。
 
-UI 卡片是声明式的：包在 `package.json` 的 `pi.ui` 数组里写 `{id, kind: "status-card", title, body?, href?}`，Plugins 详情页渲染成纯文本卡 + 外链。选声明式而非「插件跑代码注册 React 组件」，理由与 #24 真隔离同一个：跨进程组件、iframe 沙箱、样式隔离、生命周期四件高危事项，先证明链路走得通。校验规则：只认 `status-card`、`href` 白名单仅 http/https（`javascript:` 丢弃但保留卡片）、同包重复 id 去重、单包上限 12 条；任何非法条目静默丢弃，不让一个写错的插件把 `/api/plugins` 打成 500。
+UI 卡片是声明式的：包在 `package.json` 的 `pi.ui` 数组里写 `{id, kind: "status-card", title, body?, href?}`，Plugins 详情页渲染成纯文本卡 + 外链。选声明式而非「插件跑代码注册 React 组件」，理由与 #24 真隔离同一个：跨进程组件、iframe 沙箱、样式隔离、生命周期四件高危事项，先证明链路走得通。校验规则：任何 `kind` 都接受（只当标签用，不影响渲染）、`href` 白名单仅 http/https（`javascript:` 丢弃但保留卡片）、缺 `kind`／`id`／`title` 的条目丢弃、同包重复 id 去重、单包上限 12 条；任何非法条目静默丢弃，不让一个写错的插件把 `/api/plugins` 打成 500。
 
 ---
 ### 15. PiD 改名 + 图标

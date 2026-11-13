@@ -3,7 +3,7 @@
 // ============================================================================
 //
 // 已安装的 pi package 在 package.json 的 `pi.ui` 里声明卡片，PiD 的 Plugins
-// 设置页把卡片渲染出来。只做 status-card 一种 kind，且只当纯文本 + 外链处理：
+// 设置页把卡片渲染出来。任何 kind 都接受（`status-card`、`panel`、`tool-card`…），渲染一律是纯文本 + 外链：
 //
 //   "pi": { "ui": [{ "id": "x.usage", "kind": "status-card",
 //                    "title": "Usage", "body": "...", "href": "https://..." }] }
@@ -21,6 +21,7 @@ export type { PluginUiCard };
 /** 单包卡片上限，超出忽略。 */
 export const MAX_UI_CARDS_PER_PACKAGE = 12;
 
+const MAX_KIND_LENGTH = 40;
 const MAX_TITLE_LENGTH = 120;
 const MAX_BODY_LENGTH = 400;
 const MAX_ID_LENGTH = 120;
@@ -60,13 +61,14 @@ export function parsePluginUiCards(raw: unknown): PluginUiCard[] {
     if (cards.length >= MAX_UI_CARDS_PER_PACKAGE) break;
     if (!entry || typeof entry !== "object") continue;
     const item = entry as Record<string, unknown>;
-    if (item.kind !== "status-card") continue;
+    const kind = readText(item.kind, MAX_KIND_LENGTH);
+    if (!kind) continue;
     const id = readText(item.id, MAX_ID_LENGTH);
     const title = readText(item.title, MAX_TITLE_LENGTH);
     if (!id || !title) continue;
     if (seen.has(id)) continue;
     seen.add(id);
-    const card: PluginUiCard = { id, kind: "status-card", title };
+    const card: PluginUiCard = { id, kind, title };
     const body = readText(item.body, MAX_BODY_LENGTH);
     if (body) card.body = body;
     const href = sanitizeHref(item.href);
