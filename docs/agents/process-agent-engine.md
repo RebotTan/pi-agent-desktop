@@ -129,7 +129,8 @@ P0 盘点结果（2026-11-13，仅非测试调用；`lib/rpc-manager.ts` 内部�
 
 ### P2 — 加固真实 worker 通信与生命周期
 
-- [ ] 替换 stdout 协议为专用 IPC，实现版本/消息校验、请求终止、实例隔离、有序事件/快照和有界发送。
+- [x] 协议改走 Node 的 ipc 通道（stdio 第 4 位）：stdout/stdin 不再承载协议，SDK 与扩展的打印不会再被当成一行 JSON。两端各带 `PROTOCOL_VERSION`，host 看到不匹配的 ready 就杀掉重建；一条测试锁住两处常量不漂移。`destroy` 的回包改成 `process.send` 回调里再退进程，否则 IPC 缓冲区里的 response 会跟着 `process.exit` 丢掉。
+- [ ] 剩余：请求终止的显式语义（在途请求在 worker 被杀时如何失败由上层 handle 兜着，协议层还没表达）、实例隔离（一个 worker 承载多个会话时的路由边界）、有序事件/快照、背压与有界发送。
 - [ ] 显式分离父/worker 引擎选择；完成本地装配及子会话 handle 登记，处理 worker 崩溃、父断线、正常退出和强杀。
 - [ ] RPC handle 的生产方法提供真实实现，不能残留空的 `beginExtensionBinding` 或恒假的磁盘驱逐判断。
 

@@ -4,6 +4,13 @@
 //
 // 每个 worker 是一个独立的 Node 子进程，通过 stdio JSON-RPC 与主进程通信。
 // 协议：
+//   主进程 → worker: {protocol:1,type:"request",id,sessionId,method,params}
+//   worker → 主进程: {protocol:1,type:"response",id,result|error}
+//                    {protocol:1,type:"event",sessionId,event}
+//                    {protocol:1,type:"ready"}（worker 启动完成）
+//
+// 走 Node 的 ipc 通道（stdio 第 4 位），不是 stdout：SDK 和扩展随时可能往 stdout 打印，
+// 混在同一个流里就让一次日志变成协议解析错误。stdout 因此不再承载协议。
 //   主进程 → worker: {type:"request",id,sessionId,method,params}
 //   worker → 主进程: {type:"response",id,result|error}
 //                    {type:"event",sessionId,event}
@@ -14,10 +21,8 @@
 // 指纹变化即丢弃预热 worker。
 
 import { spawn, type ChildProcess } from "node:child_process";
-import { createInterface } from "node:readline";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WORKER_ENTRY = join(__dirname, "worker-process-main.mjs");
 const PREWARM_TTL_MS = 3 * 60 * 1000;
@@ -28,6 +33,9 @@ export interface WorkerSpawnOptions {
   readonly model?: string;
   readonly toolNames?: string[];
 }
+
+/** 必须与 lib/worker-process-main.mjs 的 PROTOCOL_VERSION 相同；不匹配直接丢弃该 worker。 */
+export const PROTOCOL_VERSION = 1;
 
 export interface WorkerProcess {
   readonly pid: number;
@@ -50,8 +58,7 @@ class WorkerProcessImpl implements WorkerProcess {
     this.proc = proc;
     this.pid = proc.pid ?? -1;
 
-    // 只用一个 readline 消费 stdout：」ready」检测与普通消息分发共用同一行缓冲。
-    // 曾经额外挂 proc.stdout.on("data") 做 ready 检测，粘包时会漏掉 ready 消息。
+    // ipc 通道本身按消息分帧：ready 检测和消息分发共用同一个 handler。
     let settleReady: (() => void) | null = null;
     let rejectReady: ((error: Error) => void) | null = null;
     this.readyPromise = new Promise((resolve, reject) => {
@@ -70,21 +77,26 @@ class WorkerProcessImpl implements WorkerProcess {
       for (const handler of this.exitHandlers) handler();
     });
 
-    // 主进程读 worker stdout 的 JSON-RPC 消息
-    const rl = createInterface({ input: proc.stdout! });
-    rl.on("line", (line) => {
-      try {
-        const message = JSON.parse(line);
-        if (message.type === "ready") {
-          clearTimeout(readyTimer);
-          settleReady?.();
-          return;
-        }
-        if (message.sessionId) {
-          const handlers = this.messageHandlers.get(message.sessionId);
-          if (handlers) for (const handler of handlers) handler(message);
-        }
-      } catch {}
+    proc.on("message", (raw: unknown) => {
+      if (!raw || typeof raw !== "object") return;
+      const message = raw as Record<string, unknown>;
+      if (message.protocol !== PROTOCOL_VERSION) {
+        // 两端协议不一致时任何继续解读都是猜：杀掉，让上层重建。
+        this.alive = false;
+        clearTimeout(readyTimer);
+        rejectReady?.(new Error(`Worker protocol ${String(message.protocol)} != ${PROTOCOL_VERSION}`));
+        proc.kill();
+        return;
+      }
+      if (message.type === "ready") {
+        clearTimeout(readyTimer);
+        settleReady?.();
+        return;
+      }
+      if (typeof message.sessionId === "string") {
+        const handlers = this.messageHandlers.get(message.sessionId);
+        if (handlers) for (const handler of handlers) handler(message);
+      }
     });
   }
 
@@ -98,7 +110,10 @@ class WorkerProcessImpl implements WorkerProcess {
 
   send(message: Record<string, unknown>): void {
     if (!this.isAlive()) return;
-    this.proc.stdin?.write(JSON.stringify(message) + "\n");
+    // ipc 写入是异步的，通道关闭后 send 会抛；别让异常冒进会话的发送回调。
+    try {
+      this.proc.send({ protocol: PROTOCOL_VERSION, ...message });
+    } catch {}
   }
   onMessage(sessionId: string, handler: (message: Record<string, unknown>) => void): void {
     let handlers = this.messageHandlers.get(sessionId);
@@ -151,7 +166,8 @@ export class WorkerProcessHost {
 
   private async spawnFresh(options: WorkerSpawnOptions): Promise<WorkerProcessImpl> {
     const proc = spawn(process.execPath, [WORKER_ENTRY], {
-      stdio: ["pipe", "pipe", "inherit"],
+      // stdin/stdout 都不承载协议：stdout 留给 SDK/扩展日志（丢弃），stderr 直通。
+      stdio: ["ignore", "ignore", "inherit", "ipc"],
       cwd: options.cwd,
       env: {
         ...process.env,
