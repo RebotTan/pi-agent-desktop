@@ -31,7 +31,7 @@ export async function GET(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const sm = liveRpc?.readSession() ?? openSessionManager(filePath!);
+    const sm = liveRpc ? await liveRpc.readSession() : openSessionManager(filePath!);
     // `before` is the oldest entry already on the client; fetch its ancestors
     // only (excludeLeaf) so prepending the page does not duplicate `before`.
     const entries = sm.getEntries();

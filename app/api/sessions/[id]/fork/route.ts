@@ -60,12 +60,13 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // by forkSessionBranch() see the same entries. The leaf is the one
     // GET /api/sessions/[id] shows: the open wrapper's, else the file's.
     const wrapper = getRpcSession(id);
-    let liveLeafId = wrapper?.isAlive() ? wrapper.readSession().getLeafId() : undefined;
+    const live = wrapper?.isAlive() ? await wrapper.readSession() : undefined;
+    let liveLeafId = live?.getLeafId();
     if (wrapper && liveLeafId !== undefined && !wrapper.isRunning()) {
       // Another pi process appended to the file of an idle wrapper: a page
       // load (GET ?force=1) would drop the wrapper and show the file instead.
       const diskLatest = readLatestSessionEntryId(wrapper.sessionFile);
-      if (diskLatest && !wrapper.readSession().getEntry(diskLatest)) liveLeafId = undefined;
+      if (diskLatest && !live?.getEntry(diskLatest)) liveLeafId = undefined;
     }
     const fork = side ? createSideSession(sourcePath, liveLeafId, sideName) : forkSessionBranch(sourcePath, liveLeafId, sourceTitle);
     cacheSessionPath(fork.sessionId, fork.path);

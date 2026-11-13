@@ -40,7 +40,7 @@ async function readSummary(id: string): Promise<SessionUsageSummary | null> {
   const rpc = getRpcSession(id);
   let sm: SessionManagerLike;
   if (rpc?.isAlive()) {
-    sm = rpc.readSession();
+    sm = await rpc.readSession();
   } else {
     const path = await resolveSessionPath(id);
     if (!path) return null;

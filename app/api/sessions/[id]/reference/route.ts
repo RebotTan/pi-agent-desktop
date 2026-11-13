@@ -12,7 +12,7 @@ export async function GET(
     const filePath = await resolveSessionPath(id);
     if (!filePath) return NextResponse.json({ error: "Session not found" }, { status: 404 });
 
-    const sm = openSessionManagerForRead(id, filePath);
+    const sm = await openSessionManagerForRead(id, filePath);
     if (!sm) return NextResponse.json({ error: "Session not found" }, { status: 404 });
 
     const context = buildSessionContext(sm.getEntries() as never, sm.getLeafId(), {

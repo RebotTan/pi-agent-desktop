@@ -12,10 +12,10 @@ import type { SessionReadView } from "./session-handle";
  * an empty chat; the entries only exist in the live runtime's manager until
  * the flush happens. Returns null when neither source has the session.
  */
-export function openSessionManagerForRead(
+export async function openSessionManagerForRead(
   sessionId: string,
   filePath: string,
-): SessionReadView | null {
+): Promise<SessionReadView | null> {
   if (existsSync(filePath)) return SessionManager.open(filePath);
   const live = getRpcSession(sessionId);
   if (!live?.isAlive()) return null;

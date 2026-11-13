@@ -72,12 +72,41 @@ export interface SessionHandle {
   // HTTP 读路径（GET 会话、分页上下文、fork 的 leaf、统计、引用）必须看见
   // 未落盘的内存状态：pi 直到第一条 assistant 消息才首次 flush，盲读磁盘会
   // 得到空会话。因此由会话自己给出视图，父进程不再直接拿 SessionManager。
-  // 本地实现返回运行中的 manager；跨进程侧返回缓存的最近快照（P2）。
-  readSession(): SessionReadView;
+  // 本地实现直接给出运行中的 manager（同步可得）；跨进程侧要一次 IPC 往返，
+  // 所以接口本身是异步的 —— 用同步签名加缓存会让读到陈旧历史成为默认行为。
+  readSession(): Promise<SessionReadView>;
 
   // --- 需要在会话内完成的动作 ---
   // 生成标题要用该会话自己的模型与凭证，调用方不持有 SDK 会话。
   generateTitle(): Promise<{ title: string; usage?: unknown }>;
   /** 计价用的模型查找；没有运行时（纯磁盘视图）时为 undefined。 */
   modelLookup(): SessionModelLookup | undefined;
+}
+
+/** 快照的线上形态：可 JSON 序列化的只读会话数据（跨进程传递）。 */
+export interface SessionSnapshotData {
+  readonly sessionId: string;
+  readonly sessionFile: string;
+  readonly cwd: string;
+  readonly entries: unknown[];
+  readonly leafId: string | null;
+  readonly tree: unknown;
+  readonly header: unknown;
+  readonly sessionName: string | undefined;
+}
+
+/** 把线上快照包成 SessionReadView，让 HTTP 读路径在两种引擎下写法一致。 */
+export function sessionReadViewFrom(data: SessionSnapshotData): SessionReadView {
+  return {
+    getSessionId: () => data.sessionId,
+    getSessionFile: () => data.sessionFile,
+    getCwd: () => data.cwd,
+    getEntries: (() => data.entries) as unknown as SessionReadView["getEntries"],
+    getLeafId: () => data.leafId,
+    getEntry: ((id: string) =>
+      (data.entries as Array<{ id?: string }>).find((entry) => entry.id === id)) as unknown as SessionReadView["getEntry"],
+    getHeader: (() => data.header) as unknown as SessionReadView["getHeader"],
+    getTree: (() => data.tree) as unknown as SessionReadView["getTree"],
+    getSessionName: () => data.sessionName,
+  };
 }

@@ -61,7 +61,7 @@ export async function GET(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const sm = liveRpc?.readSession() ?? openSessionManager(resolvedPath!);
+    const sm = liveRpc ? await liveRpc.readSession() : openSessionManager(resolvedPath!);
     perf?.span("open");
     const filePath = liveRpc?.sessionFile || sm.getSessionFile() || resolvedPath || "";
     const entries = sm.getEntries();

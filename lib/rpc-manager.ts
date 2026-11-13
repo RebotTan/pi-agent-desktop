@@ -627,7 +627,7 @@ export class AgentSessionWrapper implements SessionHandle {
    * flushed yet. Read-only in practice — a caller that appends opens the file
    * itself (openSessionManager(path, { mutable: true })).
    */
-  readSession(): SessionReadView {
+  async readSession(): Promise<SessionReadView> {
     return this.inner.sessionManager;
   }
 

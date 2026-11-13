@@ -13,13 +13,10 @@
 //   与磁盘检查，worker 侧不需要，保持 no-op。
 
 import type { AgentEvent } from "./rpc-manager";
-import type { EventListener, SessionHandle, SessionModelLookup, SessionReadView } from "./session-handle";
+import type { EventListener, SessionHandle, SessionModelLookup, SessionReadView, SessionSnapshotData } from "./session-handle";
+import { sessionReadViewFrom } from "./session-handle";
 import type { WorkerProcess } from "./worker-process-host";
 
-/** 跨进程侧尚未实现的方法：抛错，绝不返回假值让调用方当作「功能已支持」。 */
-function notYetAvailable(method: string): Error {
-  return new Error(`RpcSessionHandle.${method}() is not available until the worker snapshot channel lands (P2)`);
-}
 
 let nextRequestId = 1;
 
@@ -46,6 +43,7 @@ export class RpcSessionHandle implements SessionHandle {
   }>();
   private alive = true;
   private running = false;
+  private modelCosts: Record<string, number> | undefined;
   private destroyEmitted = false;
   private realSessionId: string | null = null;
   private startPromise: Promise<unknown> = Promise.resolve();
@@ -125,6 +123,8 @@ export class RpcSessionHandle implements SessionHandle {
     }).then((result) => {
       const realSessionId = (result as { realSessionId?: unknown } | undefined)?.realSessionId;
       if (typeof realSessionId === "string" && realSessionId) this.realSessionId = realSessionId;
+      const costs = (result as { modelCosts?: unknown } | undefined)?.modelCosts;
+      if (costs && typeof costs === "object") this.modelCosts = costs as Record<string, number>;
     });
     // 记日志但不吞错：start 失败时 waitUntilReady 要把它抛给调用方，而不是去问一个不存在的会话。
     startRequest.catch((error) => {
@@ -205,18 +205,27 @@ export class RpcSessionHandle implements SessionHandle {
     return null;
   }
 
-  // P1 阶段不提供服务端快照通道：抛错而不是返回空 manager/空标题，误用会立刻
-  // 暴露，而不是让 HTTP 读到一个假的空会话。P2 的 IPC 快照回执实现这三个方法。
-  readSession(): SessionReadView {
-    throw notYetAvailable("readSession");
+  // 快照由 worker 侧生成（它持有真 manager），父进程只把数据包成 SessionReadView。
+  // 一次 IPC 往返换一份完整历史；增量/revision 缓存是 P2 剩余项。
+  async readSession(): Promise<SessionReadView> {
+    const data = (await this.request("session.snapshot")) as SessionSnapshotData;
+    return sessionReadViewFrom(data);
   }
 
-  generateTitle(): Promise<{ title: string; usage?: unknown }> {
-    return Promise.reject(notYetAvailable("generateTitle"));
+  async generateTitle(): Promise<{ title: string; usage?: unknown }> {
+    return (await this.request("generate_title")) as { title: string; usage?: unknown };
   }
 
+  /** 价格表随 session.start 一起回来；还没拿到时返回 undefined（调用方从 entries 取价）。 */
   modelLookup(): SessionModelLookup | undefined {
-    throw notYetAvailable("modelLookup");
+    const costs = this.modelCosts;
+    if (!costs) return undefined;
+    return {
+      getModel: (provider, modelId) => {
+        const cacheRead = costs[`${provider}/${modelId}`];
+        return cacheRead === undefined ? undefined : { cost: { cacheRead } };
+      },
+    };
   }
 
   // --- 内部 ---
