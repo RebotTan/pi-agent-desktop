@@ -17,12 +17,21 @@ import { RpcSessionHandle } from "./session-handle-rpc";
 import { getWorkerProcessHost } from "./worker-process-host";
 import type { WorkerSpawnOptions } from "./worker-process-host";
 
-export type SpawnOptionsResolver = (sessionId: string) => WorkerSpawnOptions;
+export type SpawnOptionsResolver = (
+  sessionId: string,
+  startParams?: Record<string, unknown>,
+) => WorkerSpawnOptions;
+
+/** worker 的 cwd 决定它的相对路径与文件工具根，所以必须跟着会话走，不是主进程 cwd。 */
+function defaultSpawnOptions(_sessionId: string, startParams?: Record<string, unknown>): WorkerSpawnOptions {
+  const cwd = typeof startParams?.cwd === "string" && startParams.cwd ? startParams.cwd : process.cwd();
+  return { cwd };
+}
 
 export class ProcessAgentEngine extends InProcessAgentEngine<RpcSessionHandle> {
   private readonly resolveSpawnOptions: SpawnOptionsResolver;
 
-  constructor(resolveSpawnOptions: SpawnOptionsResolver = () => ({ cwd: process.cwd() })) {
+  constructor(resolveSpawnOptions: SpawnOptionsResolver = defaultSpawnOptions) {
     super();
     this.resolveSpawnOptions = resolveSpawnOptions;
   }
@@ -57,12 +66,18 @@ export class ProcessAgentEngine extends InProcessAgentEngine<RpcSessionHandle> {
     }
 
     const starting = (async () => {
-      const spawnOptions = this.resolveSpawnOptions(sessionId);
+      const spawnOptions = this.resolveSpawnOptions(sessionId, options?.startParams);
       const worker = await getWorkerProcessHost().spawnWorker(spawnOptions);
       const handle = new RpcSessionHandle(worker, {
         sessionId,
         cwd: spawnOptions.cwd,
         startParams: options?.startParams,
+      });
+      // worker 崩了、被 kill 或正常 destroy，都得把死桩从 registry 摘掉：
+      // 留着它，running 视图和后续 startSession 都会把这个已经不通的会话当真。
+      // 审批取消 / session_ended 广播在 P3 的桥接里接上，这里只管父侧身份。
+      handle.onDestroy(() => {
+        if (this.getSession(sessionId) === handle) this.deleteSession(sessionId);
       });
       this.setSession(sessionId, handle);
       handle.start();
