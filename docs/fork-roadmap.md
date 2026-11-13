@@ -312,7 +312,11 @@ merge 会把已删的 relay 静默加回来：merge-base `140b4545` 没有 relay
 | 投入 | 1–2 周 |
 | 优先级 | ★★☆ |
 
-**跨进程引擎层已交付（2026-11，ADR 0002）**：`lib/session-handle.ts`（接口）、`lib/session-handle-rpc.ts`（RPC 桩）、`lib/worker-process-host.ts`（spawn + 预热池）、`lib/worker-process-main.mjs`（worker 入口）、`lib/agent-engine-process.ts`（`ProcessAgentEngine`，继承 `InProcessAgentEngine` 的启动协议，只把装配换成 spawn）。**剩下的**是 worker 侧接真 pi SDK（`lib/worker-process-main.mjs` 三处 TODO：`createAgentSessionFromServices`、事件桥、`session.shutdown()`），以及 assembler 参数化（当前 `startSession` 不执行父进程 assembler，启动参数走 `SpawnOptionsResolver`）。参考 PiDeck/PI-Desktop 思想，不抄代码避 LGPL。
+**跨进程引擎层已交付（2026-11，ADR 0002）**：`lib/session-handle.ts`（接口）、`lib/session-handle-rpc.ts`（RPC 桩）、`lib/worker-process-host.ts`（spawn + 预热池）、`lib/worker-process-main.mjs`（worker 入口）、`lib/agent-engine-process.ts`（`ProcessAgentEngine`，继承 `InProcessAgentEngine` 的启动协议，只把装配换成 spawn）。
+
+**worker 侧已经是真 pi 会话（0.11 之后）**：`lib/worker-process-main.mjs` 首次 `session.start` 时用 jiti 加载 `lib/rpc-manager.ts`，直接复用整份 `startRpcSession`（该文件无 `next/`、`@/app` 依赖），事件 / `send` / `shutdown` / `destroy` 全部转发给真 `AgentSessionWrapper`。启动入参经 `AgentEngine.startSession` 的 `options.startParams`（`{ sessionFile, cwd, ...options }`，由 `lib/rpc-manager.ts` 传）交给 worker，worker 自己跑一遍 `collectSessionStartParams`。实测：worker 起会话 ~1.8s（jiti 转译 ~5s 由预热池承担），空 `agentDir` 下 `prompt` 的 `No API key` 错误能原样回传。
+
+**尚未打通：生产路径仍走 `InProcessAgentEngine`。** 阻塞点不是开关，是类型契约：`getEngine()` 的类型、`rpc-manager` 的 `/api/agent/**` 路由都按 `AgentSessionWrapper` 的**内部状态**写（`pendingUiRequests`、扩展 widget、任务快照、auto title、prompt 准入队列、MCP host…，40+ 私有字段），而 `SessionHandle` 只覆盖 20 个方法。要切换得先把这些状态搬进接口（或让路由显式 fail-fast），属独立一轮。`ProcessAgentEngine` 目前供「独立会话」直接使用：`getProcessEngine().startSession(id, noop, { startParams })` 返回 `RpcSessionHandle`。
 
 #### 25. 外部会话导入转换器
 
