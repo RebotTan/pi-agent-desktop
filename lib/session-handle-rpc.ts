@@ -13,6 +13,8 @@
 //   与磁盘检查，worker 侧不需要，保持 no-op。
 
 import type { AgentEvent } from "./rpc-manager";
+import type { PendingApprovalView } from "./approval-coordinator";
+import { getApprovalCoordinator } from "./approval-coordinator";
 import type { EventListener, SessionHandle, SessionModelLookup, SessionReadView, SessionSnapshotData } from "./session-handle";
 import { sessionReadViewFrom } from "./session-handle";
 import type { WorkerProcess } from "./worker-process-host";
@@ -152,6 +154,8 @@ export class RpcSessionHandle implements SessionHandle {
     }
     this.alive = false;
     this.failPending(new Error("Session destroyed"));
+    // 父进程的审批卡片属于这个会话：桩死了就没人会来结算，留着只会永远挂着。
+    getApprovalCoordinator().cancel({ sessionId: this.sessionId }, "session_destroyed");
     this.emitDestroy();
   }
 
@@ -230,11 +234,15 @@ export class RpcSessionHandle implements SessionHandle {
 
   // --- 内部 ---
 
-  private handleWorkerMessage(message: { type: string; id?: number; event?: AgentEvent; result?: unknown; error?: { message: string } }): void {
+  private handleWorkerMessage(message: { type: string; id?: number; event?: AgentEvent; result?: unknown; error?: { message: string }; approval?: PendingApprovalView }): void {
     if (message.type === "event" && message.event) {
       if (message.event.type === "agent_start") this.running = true;
       if (message.event.type === "agent_end" || message.event.type === "agent_settled") this.running = false;
       for (const listener of this.listeners) listener(message.event);
+      return;
+    }
+    if (message.type === "approval_request" && message.approval) {
+      this.adoptApproval(message.approval);
       return;
     }
     if (message.type === "response" && message.id !== undefined) {
@@ -244,6 +252,22 @@ export class RpcSessionHandle implements SessionHandle {
       if (message.error) pending.reject(new Error(message.error.message));
       else pending.resolve(message.result);
     }
+  }
+
+  /**
+   * worker 里的扩展要用人工批准。挂起的 Promise 在 worker 里，界面在父进程：
+   * 把它登记进父进程的协调器，HTTP 的 settle 结算后再把结果发回去。
+   */
+  private adoptApproval(view: PendingApprovalView): void {
+    void getApprovalCoordinator()
+      .adopt(view)
+      .then((approved) => {
+        this.worker.send({ type: "approval_result", sessionId: this.sessionId, approvalId: view.id, approved });
+      })
+      .catch(() => {
+        // 协调器不该 reject；真 reject 了就按未批准处理，绝不默认放行。
+        this.worker.send({ type: "approval_result", sessionId: this.sessionId, approvalId: view.id, approved: false });
+      });
   }
 
   private handleWorkerExit(): void {

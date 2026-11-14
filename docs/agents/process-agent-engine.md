@@ -142,7 +142,8 @@ P0 盘点结果（2026-11-13，仅非测试调用；`lib/rpc-manager.ts` 内部�
 
 ### P3 — 桥接完整功能与全局服务
 
-- [ ] 完成第 4 节审批、事件/通知、配置安全状态、插件注册桥接；避免在 worker import 时启动调度器/推送等全局后台服务。
+- [x] 审批桥接：worker 里的 `lib/approval-coordinator.ts` 单例被 `setRemote` 接管（`lib/worker-process-main.mjs` 的 `installApprovalBridge`），请求以 `approval_request` 发给父进程，父侧 `RpcSessionHandle.adoptApproval` 用 `adopt()` 登记进父进程的 pending（`lib/approval-coordinator.ts`），HTTP settle 后回 `approval_result`。两侧共用同一个 `PendingApprovalView`，父进程不另建审批表。handle 销毁、worker 退出、会话 destroy 都按未批准结算，绝不默认放行。测试 `lib/approval-bridge.test.mjs`（4 条，含「扩展看到的 coordinator 就是桥接安装的那个」）。
+- [ ] 完成第 4 节余下部分：事件/通知、配置安全状态、插件注册桥接；避免在 worker import 时启动调度器/推送等全局后台服务。
 - [ ] 打通扩展 UI 请求/回复与状态重连、MCP 状态/信任/重载、Tasks/Debug、子会话及调度会话。
 - [ ] 完成未落盘读取、disk-ahead、自动标题、tool policy 和 chat unlock 的跨进程竞态测试。
 

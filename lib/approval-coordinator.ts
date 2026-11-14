@@ -21,23 +21,46 @@ interface PendingApproval extends PendingApprovalView {
   resolve: (approved: boolean) => void;
 }
 
+/** 子进程里的 coordinator 把审批请求交给这段代码发回主进程。 */
+export interface ApprovalRemote {
+  request(view: PendingApprovalView): Promise<boolean>;
+}
+
 export class ApprovalCoordinator {
   private pending = new Map<string, PendingApproval>();
   private cancelCallbacks = new Set<(id: string, reason: string) => void>();
+  private remote: ApprovalRemote | null = null;
 
-  /** 挂起一次待审批，返回解析为 `approved` 的 Promise（settle 前不 resolve）。 */
+  /**
+   * 挂起一次待审批，返回解析为 `approved` 的 Promise（settle 前不 resolve）。
+   *
+   * 会话跑在子进程时，挂起的 Promise 在子进程里，界面和 HTTP 却在主进程；这时
+   * 请求转发给 remote（子进程设的），主进程只留一份给人看的账。
+   */
   requestApproval(toolName: string, args: unknown, sessionId?: string): Promise<boolean> {
+    const view: PendingApprovalView = {
+      id: randomUUID(),
+      toolName,
+      args,
+      requestedAt: Date.now(),
+      ...(sessionId ? { sessionId } : {}),
+    };
+    if (this.remote) return this.remote.request(view);
     return new Promise<boolean>((resolve) => {
-      const id = randomUUID();
-      this.pending.set(id, {
-        id,
-        toolName,
-        args,
-        requestedAt: Date.now(),
-        sessionId,
-        resolve,
-      });
+      this.pending.set(view.id, { ...view, resolve });
     });
+  }
+
+  /** 替另一个进程登记：它在对方的 pending 里挂起，在本进程由 HTTP 结算。 */
+  adopt(view: PendingApprovalView): Promise<boolean> {
+    return new Promise<boolean>((resolve) => {
+      this.pending.set(view.id, { ...view, resolve });
+    });
+  }
+
+  /** 子进程用它在自己这侧接管审批请求；传 null 恢复本地挂起。 */
+  setRemote(remote: ApprovalRemote | null): void {
+    this.remote = remote;
   }
 
   /** 当前所有待审批项（按挂起顺序）。 */
