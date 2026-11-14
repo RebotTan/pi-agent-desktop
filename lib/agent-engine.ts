@@ -169,7 +169,7 @@ export class InProcessAgentEngine<H extends SessionHandle = AgentSessionWrapper>
     options?: { shutdownDeadlineMs?: number; startParams?: Record<string, unknown> },
   ): Promise<SessionStartResult<H>> {
     const existing = this.sessions.get(sessionId);
-    if (existing?.isAlive()) return { session: existing, realSessionId: sessionId };
+    if (existing?.isAlive()) return { session: existing, realSessionId: this.realSessionIdOf(sessionId, existing) };
 
     const inflight = this.startLockMap.get(sessionId);
     if (inflight) return inflight;
@@ -185,11 +185,31 @@ export class InProcessAgentEngine<H extends SessionHandle = AgentSessionWrapper>
       return waiting;
     }
 
-    const starting = (async () => assembler())().finally(() => {
+    // 子类只决定「这次会话从哪来」：本进程装配，还是起一个 worker。
+    // 启动协调（existing / inflight / closing-wait / lock）留在这里，只有一份。
+    const starting = this.openSession({ sessionId, assembler, options }).finally(() => {
       this.startLockMap.delete(sessionId);
     });
     this.startLockMap.set(sessionId, starting);
     return starting;
+  }
+
+  /** 引擎的差异只有这一处；默认是「在本进程装配」。 */
+  protected openSession(request: {
+    sessionId: string;
+    assembler: () => Promise<SessionStartResult<H>>;
+    options?: { shutdownDeadlineMs?: number; startParams?: Record<string, unknown> };
+  }): Promise<SessionStartResult<H>> {
+    return request.assembler();
+  }
+
+  /**
+   * registry 键是 HTTP 侧的 id；worker 里的 SDK 会话 id 与它不同。桩自己知道答案时
+   * 就问它，不知道（本地 wrapper、测试替身）就用键：本地引擎里两者本来就是同一个。
+   */
+  protected realSessionIdOf(sessionId: string, handle: H): string {
+    const probe = handle as unknown as { getRealSessionId?: () => string };
+    return typeof probe.getRealSessionId === "function" ? probe.getRealSessionId() : sessionId;
   }
 
   closingSessionWait(sessionId: string, deadlineMs: number): Promise<void> | null {

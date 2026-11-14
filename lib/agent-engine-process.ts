@@ -11,7 +11,7 @@
 // - registry 里存 RpcSessionHandle。registry / startLocks / running listeners
 //   仍是本进程自己的容器，不委托给任何目标引擎。
 
-import { DEFAULT_SHUTDOWN_DEADLINE_MS, InProcessAgentEngine } from "./agent-engine";
+import { InProcessAgentEngine } from "./agent-engine";
 import type { SessionStartResult } from "./agent-engine";
 import { RpcSessionHandle } from "./session-handle-rpc";
 import { getWorkerProcessHost } from "./worker-process-host";
@@ -36,36 +36,14 @@ export class ProcessAgentEngine extends InProcessAgentEngine<RpcSessionHandle> {
     this.resolveSpawnOptions = resolveSpawnOptions;
   }
 
-  override async startSession(
-    sessionId: string,
-    assembler: () => Promise<SessionStartResult<RpcSessionHandle>>,
-    options?: {
-      shutdownDeadlineMs?: number;
-      startParams?: Record<string, unknown>;
-    },
-  ): Promise<SessionStartResult<RpcSessionHandle>> {
-    const existing = this.getSession(sessionId);
-    if (existing?.isAlive()) {
-      return { session: existing, realSessionId: existing.getRealSessionId() };
-    }
-
-    const inflight = this.getStartLock(sessionId);
-    if (inflight) return inflight;
-
-    const closingWait = this.closingSessionWait(
-      sessionId,
-      options?.shutdownDeadlineMs ?? DEFAULT_SHUTDOWN_DEADLINE_MS,
-    );
-    if (closingWait) {
-      const waiting: Promise<SessionStartResult<RpcSessionHandle>> = closingWait.then(() => {
-        if (this.getStartLock(sessionId) === waiting) this.deleteStartLock(sessionId);
-        return this.startSession(sessionId, assembler, options);
-      });
-      this.setStartLock(sessionId, waiting);
-      return waiting;
-    }
-
-    const starting = (async () => {
+  /** 只决定「会话从哪来」：起一个 worker 并造 RPC 桩。启动协调在基类。 */
+  protected override openSession(request: {
+    sessionId: string;
+    assembler: () => Promise<SessionStartResult<RpcSessionHandle>>;
+    options?: { shutdownDeadlineMs?: number; startParams?: Record<string, unknown> };
+  }): Promise<SessionStartResult<RpcSessionHandle>> {
+    const { sessionId, options } = request;
+    return (async () => {
       const spawnOptions = this.resolveSpawnOptions(sessionId, options?.startParams);
       const worker = await getWorkerProcessHost().spawnWorker(spawnOptions);
       const handle = new RpcSessionHandle(worker, {
@@ -83,12 +61,9 @@ export class ProcessAgentEngine extends InProcessAgentEngine<RpcSessionHandle> {
       handle.start();
       await handle.waitUntilReady();
       return { session: handle, realSessionId: handle.getRealSessionId() };
-    })().finally(() => {
-      this.deleteStartLock(sessionId);
-    });
-    this.setStartLock(sessionId, starting);
-    return starting;
+    })();
   }
+
 }
 
 export function getProcessEngine(): ProcessAgentEngine {

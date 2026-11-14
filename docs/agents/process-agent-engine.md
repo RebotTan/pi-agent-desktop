@@ -132,8 +132,9 @@ P0 盘点结果（2026-11-13，仅非测试调用；`lib/rpc-manager.ts` 内部�
 - [x] 协议改走 Node 的 ipc 通道（stdio 第 4 位）：stdout/stdin 不再承载协议，SDK 与扩展的打印不会再被当成一行 JSON。两端各带 `PROTOCOL_VERSION`，host 看到不匹配的 ready 就杀掉重建；一条测试锁住两处常量不漂移。`destroy` 的回包改成 `process.send` 回调里再退进程，否则 IPC 缓冲区里的 response 会跟着 `process.exit` 丢掉。
 - [x] 只读会话内容过 IPC：worker 用自己持有的 manager 生成 `SessionSnapshotData`（entries/leafId/tree/header/name），父进程包成 `SessionReadView`，HTTP 读路径在两种引擎下写法一致。`readSession()` 因而是异步的：同步签名只能靠缓存，会让读到陈旧历史成为默认行为。价格表随 `session.start` 一次带回，`modelLookup()` 保持同步。
 - [ ] 剩余：请求终止的显式语义（在途请求在 worker 被杀时如何失败由上层 handle 兜着，协议层还没表达）、实例隔离（一个 worker 承载多个会话时的路由边界）、快照增量/revision 与背压（现在每次读整段历史过一次 IPC，长会话会明显）。`generate_title` 已过桥但没在进程模式下跑过真实用例，与 P3 的自动标题竞态一起验。`beginExtensionBinding` 仍是 no-op、`evictIfDiskAhead` 仍恒假，P3 处理。
-- [ ] 显式分离父/worker 引擎选择；完成本地装配及子会话 handle 登记，处理 worker 崩溃、父断线、正常退出和强杀。
-- [ ] RPC handle 的生产方法提供真实实现，不能残留空的 `beginExtensionBinding` 或恒假的磁盘驱逐判断。
+- [x] 启动编排只有一份：`startSession` 的 existing / inflight / closing-wait / lock 留在基类，子类只实现 `openSession`（本地是 `assembler()`，进程是 spawn + 造桩）；worker 里的 SDK session id 与 registry 键不同，由 `realSessionIdOf` 区分。强杀有测试：被杀 worker 只摘掉自己的桩、在途请求立刻失败、另一个会话不受影响。worker 侧 `process.once("disconnect")` 让父进程死掉时不留孤儿进程。
+- [x] 子会话不是独立 wrapper：`lib/subagent-runtime.ts:606` 用 `createAgentSessionFromServices` 在同一个 worker 里直接建 SDK 会话，父侧是通过父会话的 subagent run 状态（`SUBAGENT_STATUS_TYPE` 的 custom entry 加 `getLiveSubagentStatus`）看见它的，所以没有「父进程发布子会话 handle」这件事可做。跨进程时这份状态要随事件与 custom entry 回来，在 P3 验。
+- [ ] 剩余：`beginExtensionBinding` 仍是 no-op、`evictIfDiskAhead` 仍恒假（P3）；一个 worker 承载多个会话时的路由边界也留到 P3 的子会话/调度会话一起定。
 
 主要文件：`lib/worker-process-host.ts`、`lib/worker-process-main.mjs`、`lib/session-handle-rpc.ts`、`lib/agent-engine-process.ts`、P1 的共享契约。
 
